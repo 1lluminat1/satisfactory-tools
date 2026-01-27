@@ -1,0 +1,138 @@
+============================================================
+ITEM EXAMPLE:
+============================================================
+NativeClass: /Script/CoreUObject.Class'/Script/FactoryGame.FGItemDescriptor'
+
+First item in Classes array:
+{'ClassName': 'Desc_NuclearWaste_C',
+ 'mAbbreviatedDisplayName': '',
+ 'mCanBeDiscarded': 'False',
+ 'mClassToScanFor': 'None',
+ 'mCompatibleItemDescriptors': '',
+ 'mCrosshairMaterial': 'None',
+ 'mDescription': 'The by-product of consuming Uranium Fuel Rods in the Nuclear '
+                 'Power Plant.\r\n'
+                 'Non-fissile Uranium can be extracted. Handle with '
+                 'caution.\r\n'
+                 '\r\n'
+                 'Caution: HIGHLY Radioactive.',
+ 'mDescriptorStatBars': '',
+ 'mDisplayName': 'Uranium Waste',
+ 'mEnergyValue': '0.000000',
+ 'mFluidColor': '(B=0,G=0,R=0,A=0)',
+ 'mForm': 'RF_SOLID',
+ 'mGasColor': '(B=0,G=0,R=0,A=0)',
+ 'mMenuPriority': '0.000000',
+ 'mPersistentBigIcon': 'Texture2D '
+                       '/Game/FactoryGame/Resource/Parts/NuclearWaste/UI/IconDesc_NuclearWaste_256.IconDesc_NuclearWaste_256',
+ 'mRadioactiveDecay': '10.000000',
+ 'mRememberPickUp': 'False',
+ 'mResourceSinkPoints': '0',
+ 'mScannableType': 'RTWOT_Default',
+ 'mScannerDisplayText': '',
+ 'mScannerLightColor': '(B=0,G=0,R=0,A=0)',
+ 'mShouldOverrideScannerDisplayText': 'False',
+ 'mSmallIcon': 'Texture2D '
+               '/Game/FactoryGame/Resource/Parts/NuclearWaste/UI/IconDesc_NuclearWaste_256.IconDesc_NuclearWaste_256',
+ 'mStackSize': 'SS_HUGE',
+ 'mSubCategories': ''}
+
+============================================================
+RECIPE EXAMPLE:
+============================================================
+NativeClass: /Script/CoreUObject.Class'/Script/FactoryGame.FGRecipe'
+
+First recipe in Classes array:
+{'ClassName': 'Recipe_BlueprintDesigner_C',
+ 'FullName': 'BlueprintGeneratedClass '
+             '/Game/FactoryGame/Recipes/Buildings/Recipe_BlueprintDesigner.Recipe_BlueprintDesigner_C',
+ 'mDisplayName': 'Blueprint Designer',
+ 'mIngredients': '((ItemClass=/Script/Engine.BlueprintGeneratedClass\'"/Game/FactoryGame/Resource/Parts/ModularFrame/Desc_ModularFrame.Desc_ModularFrame_C"\',Amount=15),(ItemClass=/Script/Engine.BlueprintGeneratedClass\'"/Game/FactoryGame/Resource/Parts/Cable/Desc_Cable.Desc_Cable_C"\',Amount=25),(ItemClass=/Script/Engine.BlueprintGeneratedClass\'"/Game/FactoryGame/Resource/Parts/Cement/Desc_Cement.Desc_Cement_C"\',Amount=100),(ItemClass=/Script/Engine.BlueprintGeneratedClass\'"/Game/FactoryGame/Resource/Parts/SteelPlate/Desc_SteelPlate.Desc_SteelPlate_C"\',Amount=100))',
+ 'mManualManufacturingMultiplier': '1.000000',
+ 'mManufactoringDuration': '1.000000',
+ 'mManufacturingMenuPriority': '0.000000',
+ 'mProducedIn': '("/Game/FactoryGame/Equipment/BuildGun/BP_BuildGun.BP_BuildGun_C")',
+ 'mProduct': '((ItemClass=/Script/Engine.BlueprintGeneratedClass\'"/Game/FactoryGame/Buildable/Factory/BlueprintDesigner/Desc_BlueprintDesigner.Desc_BlueprintDesigner_C"\',Amount=1))',
+ 'mRelevantEvents': '',
+ 'mVariablePowerConsumptionConstant': '0.000000',
+ 'mVariablePowerConsumptionFactor': '1.000000'}
+
+============================================================
+BUILDING EXAMPLE:
+============================================================
+NativeClass: /Script/CoreUObject.Class'/Script/FactoryGame.FGBuildableManufacturer'
+
+First building in Classes array:
+{'ClassName': 'Build_OilRefinery_C',
+ 'IsPowered': 'False',
+ 'MaxRenderDistance': '-1.000000',
+ 'OnReplicationDetailActorCreatedEvent': '()',
+ 'mAddToSignificanceManager': 'True',
+ 'mAffectsOcclusion': 'False',
+ 'mAllowColoring': 'True',
+ 'mAllowPatterning': 'True',
+ 'mAlternativeMaterialRecipes': '',
+ 'mAttachmentPoints': '',
+ 'mBlueprintBuildEffectID': '-1',
+ 'mBuildEffectSpeed': '0.000000',
+ 'mCachedSkeletalMeshes': '',
+ 'mCanChangePotential': 'True',
+ 'mCanContainLightweightInstances': 'False',
+ 'mCanEverMonitorProductivity': 'True',
+ 'mContainsComponents': 'True',
+ 'mCreateClearanceMeshRepresentation': 'True',
+ 'mCurrentProductivityMeasurementDuration': '0.000000',
+ 'mCurrentProductivityMeasurementProduceDuration': '0.000000',
+ 'mCurrentRecipeChanged': '()',
+ 'mCustomScaleType': 'ROCSS_Center',
+ 'mDefaultProductivityMeasurementDuration': '300.000000',
+ 'mDescription': 'Refines fluid and/or solid parts into other parts.\r\n'
+                 'Head Lift: 10 meters.\r\n'
+                 '(Allows fluids to be transported 10 meters upwards.)\r\n'
+                 '\r\n'
+                 'Contains both a Conveyor Belt and Pipe input and output, to '
+                 'allow for the automation of various recipes.',
+ 'mDisplayName': 'Refinery',
+ 'mDoesHaveShutdownAnimation': 'False',
+ 'mEffectUpdateInterval': '0.000000',
+ 'mFactoryInputConnections': '',
+ 'mFactoryOutputConnections': '',
+ 'mFluidStackSizeDefault': 'SS_FLUID',
+ 'mFluidStackSizeMultiplier': '1',
+ 'mForceNetUpdateOnRegisterPlayer': 'False',
+ 'mHideOnBuildEffectStart': 'False',
+ 'mInputInventoryHandlerData': '()',
+ 'mInteractingPlayers': '',
+ 'mInventoryPotentialHandlerData': '()',
+ 'mIsConsideredForBaseWeightValue': '1.000000',
+ 'mIsMultiSpawnedBuildable': 'False',
+ 'mIsUseable': 'True',
+ 'mLastProductivityMeasurementDuration': '300.000000',
+ 'mLastProductivityMeasurementProduceDuration': '300.000000',
+ 'mManufacturingSpeed': '1.000000',
+ 'mMaxPotential': '1.000000',
+ 'mMaxPotentialIncreasePerCrystal': '0.500000',
+ 'mMinPotential': '0.010000',
+ 'mMinimumProducingTime': '2.000000',
+ 'mMinimumStoppedTime': '5.000000',
+ 'mOcclusionBoxInfo': '',
+ 'mOcclusionShape': 'ROCS_Box',
+ 'mOnHasPowerChanged': '()',
+ 'mOnHasProductionChanged': '()',
+ 'mOnHasStandbyChanged': '()',
+ 'mOutputInventoryHandlerData': '()',
+ 'mPipeInputConnections': '',
+ 'mPipeOutputConnections': '',
+ 'mPowerConsumption': '30.000000',
+ 'mPowerConsumptionExponent': '1.321929',
+ 'mProductionEffectsRunning': 'False',
+ 'mProductivityMonitorEnabled': 'False',
+ 'mScaleCustomOffset': '1.000000',
+ 'mShouldModifyWorldGrid': 'True',
+ 'mShouldShowAttachmentPointVisuals': 'False',
+ 'mSignificanceRange': '17000.000000',
+ 'mSkipBuildEffect': 'False',
+ 'mTickExponent': '5.000000',
+ 'mToggleDormancyOnInteraction': 'False'}
+
+============================================================
