@@ -6,6 +6,8 @@ from database import Item, Building, Recipe, RecipeIngredient, ItemForm
 import pprint
 import re
 
+from queries import get_recipe_details
+
 # Load environment variables
 load_dotenv()
 
@@ -183,8 +185,11 @@ def main():
     print(f"✅ Loaded {len(recipes)} recipes")
     print(f"Example: {recipes[0].name} - {recipes[0].crafting_time}")
 
-    session.close()
     print("✅ ETL Complete!")
+
+    print(get_recipe_details(session, recipes[0].id)) # type: ignore 
+
+    session.close()
 
 if __name__ == "__main__":
     main()
