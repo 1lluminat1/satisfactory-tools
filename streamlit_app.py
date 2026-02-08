@@ -9,26 +9,41 @@ load_dotenv()
 engine = get_engine(os.getenv('DATABASE_URL'))
 session = get_session(engine)
 
-# Page title
-st.title("Satisfactory Recipe Browser")
+try:
+    # database queries
+    all_recipes = get_all_recipes(session)
+    all_buildings = get_all_buildings(session)
 
-# Filters section
-st.header("Filters")
-search_query = st.text_input("Search recipes by name:")
-building_filter = st.selectbox("Filter by building:", ["All"] + [
-    building for building in get_all_buildings(session)])
+    # Page title
+    st.title("Satisfactory Recipe Browser")
 
-# Main table section
-st.header("Recipes")
-filtered_recipes = [recipe for recipe in get_all_recipes(session) if search_query in recipe['name']]
-st.dataframe(filtered_recipes, use_container_width=True)
+    # Filters section
+    st.header("Filters")
+    search_query = st.text_input("Search recipes by name:").lower()
+    building_filter = st.selectbox("Filter by building:", ["All"] + all_buildings)
 
-# Recipe detail section
-st.header("Recipe Details")
-selected_recipe_id = st.selectbox("Select a recipe:", [
-    recipe['name'] for recipe in get_all_recipes(session)
-])  # TODO: Add recipe options here
-recipe_details = get_recipe_details(get_recipe(session, selected_recipe_id))
-# TODO: Display recipe details
+    # Main table section
+    st.header("Recipes")
+    filtered_recipes = [
+        recipe for recipe in all_recipes 
+            if search_query in recipe['name'].lower() 
+            and (building_filter == 'All'
+            or building_filter == recipe['building'])
+    ]
+    st.dataframe(filtered_recipes, use_container_width=True)
 
-session.close()
+    # Recipe detail section
+    st.header("Recipe Details")
+
+    recipes_name_id = {
+        item['name']: item['id'] for item in all_recipes
+    }
+
+    selected_recipe = st.selectbox("Select a recipe:", [
+        recipe['name'] for recipe in all_recipes
+    ])
+    recipe_details = get_recipe_details(get_recipe(session, recipes_name_id[selected_recipe]))
+    st.write(recipe_details)
+
+finally:
+    session.close()
