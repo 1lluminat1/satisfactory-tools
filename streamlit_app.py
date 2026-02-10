@@ -2,6 +2,7 @@ import streamlit as st
 import os
 from dotenv import load_dotenv
 from src.database import get_engine, get_session
+from src.formatters import format_recipe_for_table
 from src.queries import get_all_recipes, get_all_buildings, get_recipe_details, get_recipe
 
 # Load environment and setup database
@@ -30,6 +31,7 @@ try:
             and (building_filter == 'All'
             or building_filter == recipe['building'])
     ]
+    formatted_recipes = [format_recipe_for_table(recipe) for recipe in filtered_recipes]
     st.dataframe(filtered_recipes, use_container_width=True)
 
     # Recipe detail section
