@@ -10,6 +10,11 @@ class ItemForm(enum.Enum):
     LIQUID = "LIQUID"
     GAS = "GAS"
 
+class Purity(enum.Enum):
+    IMPURE = "IMPURE"
+    NORMAL = "NORMAL"
+    PURE = "PURE"
+
 class Item(Base):
     __tablename__ = 'items'
     
@@ -60,6 +65,57 @@ class RecipeIngredient(Base):
     
     recipe = relationship("Recipe", back_populates="ingredients")
     item = relationship("Item", back_populates="ingredients")
+
+class Group(Base):
+    __tablename__ = 'groups'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(200), nullable=False)
+    description = Column(String, default="")
+
+    production_lines = relationship("ProductionLine", back_populates="group")
+
+class ProductionLine(Base):
+    __tablename__ = 'production_lines'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(200), nullable=False)
+    target_item_id = Column(Integer, ForeignKey('items.id'))
+    target_rate = Column(Float, nullable=False)
+    group_id = Column(Integer, ForeignKey('groups.id'), nullable=True)
+    is_active = Column(Boolean, default=True)
+
+    group = relationship("Group", back_populates="production_lines")
+    factories = relationship("Factory", back_populates="production_line")
+    target_item = relationship("Item")
+    resource_nodes = relationship("ResourceNode", back_populates="production_line")
+
+class Factory(Base):
+    __tablename__ = 'factories'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(200), nullable=False)
+    production_line_id = Column(Integer, ForeignKey('production_lines.id'))
+    recipe_id = Column(Integer, ForeignKey('recipes.id'))
+    building_count = Column(Integer, nullable=False)
+    clock_speed = Column(Float, default=100.0)
+    order = Column(Integer, default=0)
+
+    production_line = relationship("ProductionLine", back_populates="factories")
+    recipe = relationship("Recipe")
+
+class ResourceNode(Base):
+    __tablename__ = 'resource_nodes'
+    
+    id = Column(Integer, primary_key=True)
+    name = Column(String(200), nullable=False)
+    item_id = Column(Integer, ForeignKey('items.id'))
+    purity = Column(SQLEnum(Purity), default=Purity.NORMAL)
+    extraction_rate = Column(Float)
+    production_line_id = Column(Integer, ForeignKey('production_lines.id'))
+
+    production_line = relationship("ProductionLine", back_populates="resource_nodes")
+    item = relationship("Item")
 
 def get_engine(database_url):
     return create_engine(database_url)

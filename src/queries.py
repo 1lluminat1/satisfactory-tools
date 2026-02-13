@@ -32,8 +32,10 @@ def get_all_buildings(session: Session) -> list[str]:
     return list(session.execute(select(Building.name)).scalars().all())
  
 def get_all_recipes(session: Session) -> list[dict]:
-    recipes = session.execute(select(Recipe)).scalars().all()
-    return [get_recipe_details(recipe) for recipe in recipes]
+    return [
+        get_recipe_details(recipe) for recipe in 
+            session.execute(select(Recipe)).scalars().all()
+    ]
 
 def get_all_items(session: Session) -> list[dict[str, Any]]:
     return [
@@ -46,16 +48,26 @@ def get_all_items(session: Session) -> list[dict[str, Any]]:
         } for item in session.execute(select(Item)).scalars().all()
     ]
 
-def get_recipes_using_item(session: Session, item_id: int) -> list[dict[str, Any]]:
+def get_item_recipe_usage(
+    session: Session,
+    item_id: int,
+    *,
+    is_output: bool = False,
+) -> list[dict[str, Any]]:
     return [
         {
             "recipe_name": recipe.name,
             "building": building.name,
-            "quantity": ingredient.quantity
-        } for ingredient, recipe, building in session.execute(
+            "quantity": ingredient.quantity,
+        } for ingredient, recipe, building in 
+            session.execute(
             select(RecipeIngredient, Recipe, Building)
             .join(RecipeIngredient.recipe)
             .join(Recipe.building)
-            .where(RecipeIngredient.item_id == item_id, RecipeIngredient.is_output == False)
+            .where(
+                RecipeIngredient.item_id == item_id,
+                RecipeIngredient.is_output.is_(is_output),
+            )
         ).all()
     ]
+
