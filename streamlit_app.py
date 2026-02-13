@@ -31,7 +31,9 @@ try:
             and (building_filter == 'All'
             or building_filter == recipe['building'])
     ]
-    formatted_recipes = [format_recipe_for_table(recipe) for recipe in filtered_recipes]
+    formatted_recipes = [
+        format_recipe_for_table(recipe) for recipe in filtered_recipes
+    ]
     st.dataframe(filtered_recipes, use_container_width=True)
 
     # Recipe detail section
@@ -44,7 +46,9 @@ try:
     selected_recipe = st.selectbox("Select a recipe:", [
         recipe['name'] for recipe in all_recipes
     ])
-    recipe_details = get_recipe_details(get_recipe(session, recipes_name_id[selected_recipe]))
+    recipe_details = get_recipe_details(
+        get_recipe(session, recipes_name_id[selected_recipe])
+    )
     st.write(recipe_details)
 
 finally:
