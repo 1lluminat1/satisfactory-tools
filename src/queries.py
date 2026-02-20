@@ -2,7 +2,7 @@ from typing import Any, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from src.database import Building, Item, Recipe, RecipeIngredient
+from .database import Building, Item, Recipe, RecipeIngredient
 
 
 def get_recipe(session: Session, recipe_id: int) -> Optional[Recipe]:
@@ -76,7 +76,7 @@ def get_item_recipe_usage(
 
 def get_recipes_for_item(session: Session, item_id: int) -> list[Recipe]:
     return session.execute(select(Recipe)
-                           .join(Recipe.recipe_ingredients)
+                           .join(Recipe.ingredients)
                            .where(
                                RecipeIngredient.item_id == item_id,
                                RecipeIngredient.is_output.is_(True)

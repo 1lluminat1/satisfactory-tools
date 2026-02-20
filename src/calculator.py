@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 
-from src.database import Recipe
-from src.queries import get_item, get_recipe, get_recipes_for_item
+from .database import Recipe
+from .queries import get_item, get_recipe, get_recipes_for_item
 
 def calculate_recipe_requirements(
     session: Session, 
@@ -70,20 +70,19 @@ def get_production_chain(session: Session, item_id: int, target_rate: float) -> 
     raw_materials = {}
 
     for input in requirements['inputs']:
-        dependencies[input['name']] = get_production_chain(session, 
+        dependencies[input['item_name']] = get_production_chain(session, 
                                                            input['item_id'], 
                                                            input['rate'])
         
-        if 'building_summary' in dependencies[input['name']]:
-            building_summary = dependencies[[input['name']]['building_summary']]
+        if 'building_summary' in dependencies[input['item_name']]:
+            for building, count in dependencies[input['item_name']]['building_summary'].items():
+                building_summary[building] = building_summary.get(building, 0) + count
         else: 
-            raw_materials[
-                f'${dependencies[input['name']['item_name']]}'
-            ] = dependencies[
-                    input['name']['required_rate']
-                ]
+            for name, count in dependencies[input['item_name']]['raw_materials'].items():
+                raw_materials[name] = raw_materials.get(name, 0) + count
 
-    building_summary[requirements['building_name']] += requirements['num_buildings']
+    key = requirements['building_name']
+    building_summary[key] = building_summary.get(key, 0) + requirements['num_buildings']
 
     return {
         "target": {

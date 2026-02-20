@@ -1,9 +1,8 @@
 import json
 import os
 from dotenv import load_dotenv
-from database import Base, get_engine, get_session, create_tables
-from database import Item, Building, Recipe, RecipeIngredient, ItemForm
-import pprint
+from .database import Base, get_engine, get_session, create_tables
+from .database import Item, Building, Recipe, RecipeIngredient, ItemForm
 import re
 
 from queries import get_recipe_details
@@ -71,9 +70,11 @@ def load_recipes(session, data):
                 if 'BuildGun' in recipe_data['mProducedIn']:
                     continue
 
-                class_name = recipe_data['ClassName']
+                if not recipe_data['ClassName'].startswith('Recipe_'):
+                    continue
 
                 # Skip if recipe has been processed already
+                class_name = recipe_data['ClassName']
                 if class_name in processed_recipes:
                     continue
 
@@ -101,9 +102,12 @@ def load_recipes(session, data):
                 
                 # Parse and add ingredients (inputs)
                 ingredients = parse_ingredients_or_products(recipe_data.get("mIngredients", ""))
+                print(f"Recipe: {recipe_data['mDisplayName']}")
+                print(f"  Parsed ingredients: {ingredients}")
                 for class_name_part, amount in ingredients:
                     full_class_name = f"Desc_{class_name_part}_C"
                     item = session.query(Item).filter_by(class_name=full_class_name).first()
+                    print(f"  Looking for {full_class_name}: {'Found' if item else 'NOT FOUND'}")
                     if item:
                         ingredient = RecipeIngredient(
                             quantity=int(amount),
@@ -153,7 +157,7 @@ def main():
     # Your code goes here!
         # Load items
     for entry in data:
-        if 'ItemDescriptor' in entry['NativeClass']:
+        if 'ItemDescriptor' in entry['NativeClass'] or 'FGResourceDescriptor' in entry['NativeClass']:
             for item_data in entry['Classes']:
                 # Insert directly, no fancy logic
                 name = item_data['mDisplayName']
