@@ -48,6 +48,9 @@ def get_all_items(session: Session) -> list[dict[str, Any]]:
         } for item in session.execute(select(Item)).scalars().all()
     ]
 
+def get_item(session: Session, item_id: int):
+    return session.query(Item).filter_by(id=item_id).first()
+
 def get_item_recipe_usage(
     session: Session,
     item_id: int,
@@ -70,4 +73,12 @@ def get_item_recipe_usage(
             )
         ).all()
     ]
+
+def get_recipes_for_item(session: Session, item_id: int) -> list[Recipe]:
+    return session.execute(select(Recipe)
+                           .join(Recipe.recipe_ingredients)
+                           .where(
+                               RecipeIngredient.item_id == item_id,
+                               RecipeIngredient.is_output.is_(True)
+                           )).scalars().all()
 
