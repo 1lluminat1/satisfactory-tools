@@ -5,7 +5,7 @@ from .database import Base, get_engine, get_session, create_tables
 from .database import Item, Building, Recipe, RecipeIngredient, ItemForm
 import re
 
-from queries import get_recipe_details
+from .queries import get_recipe_details
 
 # Load environment variables
 load_dotenv()
@@ -190,8 +190,6 @@ def main():
     print(f"Example: {recipes[0].name} - {recipes[0].crafting_time}")
 
     print("✅ ETL Complete!")
-
-    print(get_recipe_details(session, recipes[0].id)) # type: ignore 
 
     session.close()
 
