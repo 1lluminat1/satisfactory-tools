@@ -148,14 +148,6 @@ def main():
     
     print(f"Loaded {len(data)} entries from JSON")
     
-    # TODO: Parse and load data here
-    # You have access to:
-    # - data (the JSON array)
-    # - session (to add/commit to database)
-    # - All the models (Item, Building, Recipe, RecipeIngredient)
-    
-    # Your code goes here!
-        # Load items
     for entry in data:
         if 'ItemDescriptor' in entry['NativeClass'] or 'FGResourceDescriptor' in entry['NativeClass']:
             for item_data in entry['Classes']:

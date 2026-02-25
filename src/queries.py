@@ -2,9 +2,9 @@ from typing import Any, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .types import ItemDetails, RecipeDetails, RecipeUsageEntry
+from .types import FactoryDetails, GroupSummary, ItemDetails, ProductionLineDetails, RecipeDetails, RecipeUsageEntry, ResourceNodeDetails
 
-from .database import Building, Item, Recipe, RecipeIngredient
+from .database import Building, Factory, Group, Item, ProductionLine, Recipe, RecipeIngredient, ResourceNode
 
 
 # --- Helpers ---
@@ -185,3 +185,179 @@ def get_all_buildings(session: Session) -> list[str]:
         A list of building name strings.
     """
     return list(session.execute(select(Building.name)).scalars().all())
+
+
+# --- Group Queries ---
+
+def get_group(session: Session, group_id: int) -> Optional[Group]:
+    """
+    Retrieves a single Group by its ID.
+
+    Args:
+        session: An active SQLAlchemy Session.
+        group_id: The primary key of the Group to retrieve.
+
+    Returns:
+        The matching Group ORM instance, or None if not found.
+    """
+    return session.execute(select(Group).where(Group.id == group_id)).scalar()
+
+def get_all_groups(session: Session) -> list[GroupSummary]:
+    """
+    Retrieves all groups with aggregate counts for production lines and resource nodes.
+
+    Args:
+        session: An active SQLAlchemy Session.
+
+    Returns:
+        A list of GroupSummary dicts for every Group in the database.
+    """
+    groups = session.execute(select(Group)).scalars().all()
+    return [
+        {
+            "id": group.id,
+            "name": group.name,
+            "description": group.description,
+            "production_line_count": len(group.production_lines),
+            "resource_node_count": sum(
+                len(pl.resource_nodes) for pl in group.production_lines
+            )
+        }
+        for group in groups
+    ]
+
+
+# --- Production Line Queries ---
+
+def get_production_line(session: Session, production_line_id: int) -> Optional[ProductionLine]:
+    """
+    Retrieves a single ProductionLine by its ID.
+
+    Args:
+        session: An active SQLAlchemy Session.
+        production_line_id: The primary key of the ProductionLine to retrieve.
+
+    Returns:
+        The matching ProductionLine ORM instance, or None if not found.
+    """
+    return session.execute(
+        select(ProductionLine).where(ProductionLine.id == production_line_id)
+    ).scalar()
+
+def get_production_lines_for_group(session: Session, group_id: int) -> list[ProductionLineDetails]:
+    """
+    Retrieves all production lines belonging to a group as serialized dicts.
+
+    Args:
+        session: An active SQLAlchemy Session.
+        group_id: The primary key of the Group to query.
+
+    Returns:
+        A list of ProductionLineDetails dicts for every ProductionLine in the group.
+    """
+    lines = session.execute(
+        select(ProductionLine).where(ProductionLine.group_id == group_id)
+    ).scalars().all()
+
+    return [
+        {
+            "id": line.id,
+            "name": line.name,
+            "target_item_id": line.target_item_id,
+            "target_item_name": line.target_item.name,
+            "target_rate": line.target_rate,
+            "is_active": line.is_active,
+            "group_id": line.group_id
+        }
+        for line in lines
+    ]
+
+def get_factories_for_production_line(session: Session, production_line_id: int) -> list[FactoryDetails]:
+    """
+    Retrieves all factories within a production line, ordered by their processing order.
+
+    Args:
+        session: An active SQLAlchemy Session.
+        production_line_id: The primary key of the ProductionLine to query.
+
+    Returns:
+        A list of FactoryDetails dicts ordered by the Factory's order field.
+    """
+    factories = session.execute(
+        select(Factory)
+        .where(Factory.production_line_id == production_line_id)
+        .order_by(Factory.order)
+    ).scalars().all()
+
+    return [
+        {
+            "id": factory.id,
+            "name": factory.name,
+            "recipe_id": factory.recipe_id,
+            "recipe_name": factory.recipe.name,
+            "building_name": factory.recipe.building.name,
+            "building_count": factory.building_count,
+            "clock_speed": factory.clock_speed,
+            "order": factory.order
+        }
+        for factory in factories
+    ]
+
+
+# --- Resource Node Queries ---
+
+def get_resource_nodes_for_production_line(session: Session, production_line_id: int) -> list[ResourceNodeDetails]:
+    """
+    Retrieves all resource nodes assigned to a specific production line.
+
+    Args:
+        session: An active SQLAlchemy Session.
+        production_line_id: The primary key of the ProductionLine to query.
+
+    Returns:
+        A list of ResourceNodeDetails dicts for every ResourceNode in the production line.
+    """
+    nodes = session.execute(
+        select(ResourceNode).where(ResourceNode.production_line_id == production_line_id)
+    ).scalars().all()
+
+    return [
+        {
+            "id": node.id,
+            "name": node.name,
+            "item_id": node.item_id,
+            "item_name": node.item.name,
+            "purity": node.purity.value,
+            "extraction_rate": node.extraction_rate
+        }
+        for node in nodes
+    ]
+
+def get_resource_nodes_for_group(session: Session, group_id: int) -> list[ResourceNodeDetails]:
+    """
+    Retrieves all resource nodes across all production lines in a group.
+
+    Args:
+        session: An active SQLAlchemy Session.
+        group_id: The primary key of the Group to query.
+
+    Returns:
+        A flat list of ResourceNodeDetails dicts for every ResourceNode in the group.
+    """
+    nodes = session.execute(
+        select(ResourceNode)
+        .join(ResourceNode.production_line)
+        .where(ProductionLine.group_id == group_id)
+    ).scalars().all()
+
+    return [
+        {
+            "id": node.id,
+            "name": node.name,
+            "item_id": node.item_id,
+            "item_name": node.item.name,
+            "purity": node.purity.value,
+            "extraction_rate": node.extraction_rate
+        }
+        for node in nodes
+    ]

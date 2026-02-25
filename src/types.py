@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import NotRequired, TypedDict
+from typing import NotRequired, Optional, TypedDict
 
 class OutputItem(TypedDict):
     item_id: int
@@ -52,3 +52,37 @@ class RecipeUsageEntry(TypedDict):
     recipe_name: str
     building: str
     quantity: int
+
+class GroupSummary(TypedDict):
+    id: int
+    name: str
+    description: str
+    production_line_count: int
+    resource_node_count: int
+
+class ResourceNodeDetails(TypedDict):
+    id: int
+    name: str
+    item_id: int
+    item_name: str
+    purity: str
+    extraction_rate: float
+
+class ProductionLineDetails(TypedDict):
+    id: int
+    name: str
+    target_item_id: int
+    target_item_name: str
+    target_rate: float
+    is_active: bool
+    group_id: Optional[int]
+
+class FactoryDetails(TypedDict):
+    id: int
+    name: str
+    recipe_id: int
+    recipe_name: str
+    building_name: str
+    building_count: int
+    clock_speed: float
+    order: int
