@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from .types import InputItem, OutputItem, ProductionNode, RecipeRequirements
+from .schemas import InputItem, OutputItem, ProductionNode, RecipeRequirements
 from .database import Recipe
 from .queries import get_item, get_recipe, get_recipes_for_item
 

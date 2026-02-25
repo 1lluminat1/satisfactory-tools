@@ -1,6 +1,8 @@
 from __future__ import annotations
 from typing import NotRequired, Optional, TypedDict
 
+from .database import Purity
+
 class OutputItem(TypedDict):
     item_id: int
     item_name: str
@@ -65,7 +67,7 @@ class ResourceNodeDetails(TypedDict):
     name: str
     item_id: int
     item_name: str
-    purity: str
+    purity: Purity
     extraction_rate: float
 
 class ProductionLineDetails(TypedDict):

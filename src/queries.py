@@ -2,7 +2,7 @@ from typing import Any, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .types import FactoryDetails, GroupSummary, ItemDetails, ProductionLineDetails, RecipeDetails, RecipeUsageEntry, ResourceNodeDetails
+from .schemas import FactoryDetails, GroupSummary, ItemDetails, ProductionLineDetails, RecipeDetails, RecipeUsageEntry, ResourceNodeDetails
 
 from .database import Building, Factory, Group, Item, ProductionLine, Recipe, RecipeIngredient, ResourceNode
 
@@ -219,9 +219,7 @@ def get_all_groups(session: Session) -> list[GroupSummary]:
             "name": group.name,
             "description": group.description,
             "production_line_count": len(group.production_lines),
-            "resource_node_count": sum(
-                len(pl.resource_nodes) for pl in group.production_lines
-            )
+            "resource_node_count": len(group.resource_nodes)
         }
         for group in groups
     ]
@@ -306,36 +304,9 @@ def get_factories_for_production_line(session: Session, production_line_id: int)
 
 # --- Resource Node Queries ---
 
-def get_resource_nodes_for_production_line(session: Session, production_line_id: int) -> list[ResourceNodeDetails]:
-    """
-    Retrieves all resource nodes assigned to a specific production line.
-
-    Args:
-        session: An active SQLAlchemy Session.
-        production_line_id: The primary key of the ProductionLine to query.
-
-    Returns:
-        A list of ResourceNodeDetails dicts for every ResourceNode in the production line.
-    """
-    nodes = session.execute(
-        select(ResourceNode).where(ResourceNode.production_line_id == production_line_id)
-    ).scalars().all()
-
-    return [
-        {
-            "id": node.id,
-            "name": node.name,
-            "item_id": node.item_id,
-            "item_name": node.item.name,
-            "purity": node.purity.value,
-            "extraction_rate": node.extraction_rate
-        }
-        for node in nodes
-    ]
-
 def get_resource_nodes_for_group(session: Session, group_id: int) -> list[ResourceNodeDetails]:
     """
-    Retrieves all resource nodes across all production lines in a group.
+    Retrieves all resource nodes in a group.
 
     Args:
         session: An active SQLAlchemy Session.
@@ -346,8 +317,7 @@ def get_resource_nodes_for_group(session: Session, group_id: int) -> list[Resour
     """
     nodes = session.execute(
         select(ResourceNode)
-        .join(ResourceNode.production_line)
-        .where(ProductionLine.group_id == group_id)
+        .where(ResourceNode.group_id == group_id)
     ).scalars().all()
 
     return [
@@ -356,7 +326,7 @@ def get_resource_nodes_for_group(session: Session, group_id: int) -> list[Resour
             "name": node.name,
             "item_id": node.item_id,
             "item_name": node.item.name,
-            "purity": node.purity.value,
+            "purity": node.purity,
             "extraction_rate": node.extraction_rate
         }
         for node in nodes

@@ -74,6 +74,7 @@ class Group(Base):
     description = Column(String, default="")
 
     production_lines = relationship("ProductionLine", back_populates="group")
+    resource_nodes = relationship("ResourceNode", back_populates="group")
 
 class ProductionLine(Base):
     __tablename__ = 'production_lines'
@@ -88,7 +89,6 @@ class ProductionLine(Base):
     group = relationship("Group", back_populates="production_lines")
     factories = relationship("Factory", back_populates="production_line")
     target_item = relationship("Item")
-    resource_nodes = relationship("ResourceNode", back_populates="production_line")
 
 class Factory(Base):
     __tablename__ = 'factories'
@@ -112,9 +112,9 @@ class ResourceNode(Base):
     item_id = Column(Integer, ForeignKey('items.id'))
     purity = Column(SQLEnum(Purity), default=Purity.NORMAL)
     extraction_rate = Column(Float)
-    production_line_id = Column(Integer, ForeignKey('production_lines.id'))
+    group_id = Column(Integer, ForeignKey('groups.id'))
 
-    production_line = relationship("ProductionLine", back_populates="resource_nodes")
+    group = relationship("Group", back_populates="resource_nodes")
     item = relationship("Item")
 
 def get_engine(database_url):
