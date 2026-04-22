@@ -211,6 +211,7 @@ def calculate_recipe_requirements(session: Session, recipe_id: int, item_id: int
     inputs, byproducts = _collect_inputs_and_byproducts(recipe, item_id, num_buildings)
 
     return {
+        "recipe_id": recipe.id,
         "recipe_name": recipe.name,
         "building_name": recipe.building.name,
         "num_buildings": num_buildings,

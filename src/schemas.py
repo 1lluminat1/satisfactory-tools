@@ -14,6 +14,7 @@ class InputItem(TypedDict):
     rate: float
 
 class RecipeRequirements(TypedDict):
+    recipe_id: int
     recipe_name: str
     building_name: str
     num_buildings: float

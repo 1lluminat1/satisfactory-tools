@@ -1,6 +1,9 @@
+import math
+from typing import Union
+
 from sqlalchemy.orm import Session
 
-from .database import Factory, Group, Item, ProductionLine, ResourceNode
+from .database import Factory, Group, Item, ProductionLine, Purity, ResourceNode
 from .queries import get_group, get_production_lines_for_group, get_resource_nodes_for_group, get_production_line, get_all_groups
 from .calculator import ProductionCalculator
 from .schemas import ProductionNode
@@ -135,21 +138,225 @@ def get_group_summary(session: Session, group_id: int) -> dict:
     }
 
 def get_global_summary(session: Session) -> dict:
-    # calls get_group_summary for every group, rolls it all up
-    pass
+    """
+    Aggregates summaries for every group into a single global view.
 
-# Creation
-def create_production_line(session: Session, group_id: int, name: str, item_id: int, target_rate: float) -> ProductionLine:
-    # runs calculator, persists Factory rows, commits
-    pass
+    Args:
+        session: An active SQLAlchemy Session.
 
-def add_resource_node(session: Session, production_line_id: int, name: str, item_id: int, purity: str, extraction_rate: int) -> ResourceNode:
-    pass
+    Returns:
+        A dict containing:
+            - groups (list): Per-group summaries from get_group_summary.
+            - global_resource_totals (dict[str, float]): Sum of each raw material's
+                extraction rate across all groups.
+            - global_balance (dict[str, float]): Sum of each group's overall_balance,
+                i.e. network-wide surplus (positive) or deficit (negative) per material.
+    """
+    summaries = [get_group_summary(session, g['id']) for g in get_all_groups(session)]
 
-# Modification  
-def update_production_line_rate(session: Session, production_line_id: int, new_rate: float):
-    # deletes old Factory rows, reruns calculator, persists new ones
-    pass
+    global_totals: dict[str, float] = {}
+    global_balance: dict[str, float] = {}
+    for summary in summaries:
+        for mat, rate in summary['resource_totals'].items():
+            global_totals[mat] = global_totals.get(mat, 0.0) + rate
+        for mat, bal in summary['overall_balance'].items():
+            global_balance[mat] = global_balance.get(mat, 0.0) + bal
 
-def set_production_line_active(session: Session, production_line_id: int, is_active: bool):
-    pass
+    return {
+        "groups": summaries,
+        "global_resource_totals": global_totals,
+        "global_balance": global_balance,
+    }
+
+
+# --- Helpers ---
+
+def _collect_factory_specs(chain: ProductionNode) -> list[dict]:
+    """
+    Walks a production chain and aggregates per-recipe building requirements.
+
+    Recipes that appear in multiple branches of the chain have their building counts
+    summed. The returned list is ordered from deepest-dependency first (closest to
+    raw materials) to the final target recipe last, so order values match processing
+    flow.
+
+    Args:
+        chain: A production chain produced by ProductionCalculator.calculate().
+
+    Returns:
+        A list of dicts, each containing recipe_id, recipe_name, and num_buildings,
+        sorted by processing order (earliest step first).
+    """
+    specs: dict[int, dict] = {}
+
+    def visit(node: ProductionNode, depth: int) -> None:
+        if node.get('is_raw_material'):
+            return
+        req = node['requirements']
+        rid = req['recipe_id']
+        if rid in specs:
+            specs[rid]['num_buildings'] += req['num_buildings']
+            specs[rid]['depth'] = max(specs[rid]['depth'], depth)
+        else:
+            specs[rid] = {
+                'recipe_id': rid,
+                'recipe_name': req['recipe_name'],
+                'num_buildings': req['num_buildings'],
+                'depth': depth,
+            }
+        for dep in node.get('dependencies', {}).values():
+            visit(dep, depth + 1)
+
+    visit(chain, 0)
+    return sorted(specs.values(), key=lambda s: -s['depth'])
+
+def _build_factories(session: Session, line: ProductionLine) -> None:
+    """
+    Runs the production calculator for a line and persists Factory rows for each step.
+
+    Does not commit — the caller owns the transaction boundary.
+
+    Args:
+        session: An active SQLAlchemy Session.
+        line: The ProductionLine to generate factories for. Must already be persisted
+              (i.e. have an id).
+    """
+    calculator = ProductionCalculator(session)
+    chain = calculator.calculate(line.target_item_id, line.target_rate)
+
+    for order, spec in enumerate(_collect_factory_specs(chain), start=1):
+        session.add(Factory(
+            name=f"{spec['recipe_name']} ({line.name})",
+            production_line_id=line.id,
+            recipe_id=spec['recipe_id'],
+            building_count=math.ceil(spec['num_buildings']),
+            clock_speed=100.0,
+            order=order,
+        ))
+
+
+# --- Creation ---
+
+def create_production_line(
+    session: Session,
+    group_id: int,
+    name: str,
+    item_id: int,
+    target_rate: float,
+) -> ProductionLine:
+    """
+    Creates a production line in a group and persists its factory chain.
+
+    Runs the production calculator to expand the target item into a full production
+    chain, then persists one Factory row per recipe (aggregating duplicates) ordered
+    from raw-adjacent to final step. Building counts are rounded up to whole buildings.
+
+    Args:
+        session: An active SQLAlchemy Session.
+        group_id: The Group to attach the new production line to.
+        name: Human-readable name for the production line.
+        item_id: The target output item.
+        target_rate: Desired output rate in items per minute.
+
+    Returns:
+        The newly created and committed ProductionLine.
+    """
+    line = ProductionLine(
+        name=name,
+        target_item_id=item_id,
+        target_rate=target_rate,
+        group_id=group_id,
+        is_active=True,
+    )
+    session.add(line)
+    session.flush()
+
+    _build_factories(session, line)
+    session.commit()
+    return line
+
+def add_resource_node(
+    session: Session,
+    group_id: int,
+    name: str,
+    item_id: int,
+    purity: Union[str, Purity],
+    extraction_rate: float,
+) -> ResourceNode:
+    """
+    Adds a resource node to a group.
+
+    Args:
+        session: An active SQLAlchemy Session.
+        group_id: The Group the resource node belongs to.
+        name: User-assigned name (e.g. "Iron Node Alpha").
+        item_id: The Item extracted by this node.
+        purity: Node purity. Accepts the Purity enum or one of "IMPURE", "NORMAL", "PURE".
+        extraction_rate: Extraction rate in items per minute.
+
+    Returns:
+        The newly created and committed ResourceNode.
+    """
+    node = ResourceNode(
+        name=name,
+        item_id=item_id,
+        purity=Purity(purity) if isinstance(purity, str) else purity,
+        extraction_rate=extraction_rate,
+        group_id=group_id,
+    )
+    session.add(node)
+    session.commit()
+    return node
+
+
+# --- Modification ---
+
+def update_production_line_rate(
+    session: Session,
+    production_line_id: int,
+    new_rate: float,
+) -> ProductionLine:
+    """
+    Updates a production line's target rate and regenerates its factory chain.
+
+    Deletes all existing Factory rows for the line, then reruns the calculator at
+    the new rate and persists fresh factories.
+
+    Args:
+        session: An active SQLAlchemy Session.
+        production_line_id: The ProductionLine to update.
+        new_rate: New target output rate in items per minute.
+
+    Returns:
+        The updated ProductionLine.
+    """
+    line = get_production_line(session, production_line_id)
+    for factory in list(line.factories):
+        session.delete(factory)
+    session.flush()
+
+    line.target_rate = new_rate
+    _build_factories(session, line)
+    session.commit()
+    return line
+
+def set_production_line_active(
+    session: Session,
+    production_line_id: int,
+    is_active: bool,
+) -> ProductionLine:
+    """
+    Toggles a production line's active flag.
+
+    Args:
+        session: An active SQLAlchemy Session.
+        production_line_id: The ProductionLine to update.
+        is_active: New active state.
+
+    Returns:
+        The updated ProductionLine.
+    """
+    line = get_production_line(session, production_line_id)
+    line.is_active = is_active
+    session.commit()
+    return line
