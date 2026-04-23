@@ -3,8 +3,9 @@ import os
 import streamlit as st
 from dotenv import load_dotenv
 
+from src.cache import cached_all_items
 from src.database import get_engine, get_session
-from src.queries import get_all_items, get_item_recipe_usage
+from src.queries import get_item_recipe_usage
 
 
 load_dotenv()
@@ -12,7 +13,7 @@ engine = get_engine(os.getenv('DATABASE_URL'))
 session = get_session(engine)
 
 try:
-    all_items = get_all_items(session)
+    all_items = cached_all_items(session)
 
     st.title("Satisfactory Item Explorer")
 

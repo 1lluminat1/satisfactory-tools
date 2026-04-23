@@ -1,10 +1,12 @@
 import os
 
+import plotly.graph_objects as go
 import streamlit as st
 from dotenv import load_dotenv
 
-from src.database import get_engine, get_session, Item, RecipeIngredient
-from src.queries import get_all_items, get_all_groups, get_recipes_for_item
+from src.cache import cached_all_items
+from src.database import get_engine, get_session
+from src.queries import get_all_groups, get_recipes_for_item
 from src.calculator import calculate_chain
 from src.production import get_max_output
 
@@ -29,6 +31,42 @@ def collect_multi_recipe_items(node: dict, out: dict) -> None:
             }
     for dep in node.get('dependencies', {}).values():
         collect_multi_recipe_items(dep, out)
+
+
+def chain_to_sankey(chain: dict) -> tuple[list[str], list[int], list[int], list[float]]:
+    """Flatten a production chain into Plotly Sankey-friendly arrays (labels, src, tgt, val)."""
+    labels: list[str] = []
+    label_idx: dict[str, int] = {}
+    sources: list[int] = []
+    targets: list[int] = []
+    values: list[float] = []
+
+    def add_label(name: str) -> int:
+        if name not in label_idx:
+            label_idx[name] = len(labels)
+            labels.append(name)
+        return label_idx[name]
+
+    def visit(node: dict) -> None:
+        if node.get('is_raw_material'):
+            add_label(node['item_name'])
+            return
+        out_idx = add_label(node['item_name'])
+        for inp in node['recipe']['inputs']:
+            in_idx = add_label(inp['item_name'])
+            sources.append(in_idx)
+            targets.append(out_idx)
+            values.append(inp['rate'])
+        for byp in node['recipe']['byproducts']:
+            byp_idx = add_label(f"{byp['item_name']} (byproduct)")
+            sources.append(out_idx)
+            targets.append(byp_idx)
+            values.append(byp['rate'])
+        for dep in node.get('dependencies', {}).values():
+            visit(dep)
+
+    visit(chain)
+    return labels, sources, targets, values
 
 
 def render_chain(node: dict, depth: int = 0) -> None:
@@ -63,7 +101,7 @@ def render_chain(node: dict, depth: int = 0) -> None:
 try:
     st.title("Production Calculator")
 
-    all_items = get_all_items(session)
+    all_items = cached_all_items(session)
     items_by_name = {item['name']: item['id'] for item in all_items}
     items_by_id = {item['id']: item['name'] for item in all_items}
     sorted_item_names = sorted(items_by_name.keys())
@@ -161,6 +199,18 @@ try:
 
                 st.subheader("Production Chain")
                 render_chain(chain)
+
+                st.subheader("Flow Diagram")
+                labels, src, tgt, val = chain_to_sankey(chain)
+                if labels and src:
+                    fig = go.Figure(go.Sankey(
+                        node=dict(label=labels, pad=15, thickness=18),
+                        link=dict(source=src, target=tgt, value=val),
+                    ))
+                    fig.update_layout(height=max(350, 40 * len(labels)), margin=dict(l=0, r=0, t=10, b=10))
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.write("Chain is too simple to visualize.")
 
     # --- Reverse ---
     with tab_reverse:

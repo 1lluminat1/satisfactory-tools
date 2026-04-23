@@ -1,8 +1,16 @@
-from typing import Any, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .database import Building, Factory, Group, Item, ProductionLine, Recipe, RecipeIngredient, ResourceNode
+from .database import (
+    Building,
+    Factory,
+    Group,
+    Item,
+    ProductionLine,
+    Recipe,
+    RecipeIngredient,
+    ResourceNode,
+)
 from .schemas import (
     FactoryDetails,
     GroupSummary,
@@ -12,7 +20,6 @@ from .schemas import (
     RecipeUsageEntry,
     ResourceNodeDetails,
 )
-
 
 # --- Helpers ---
 
@@ -39,7 +46,7 @@ def _serialize_item(item: Item) -> ItemDetails:
 
 # --- Item Queries ---
 
-def get_item(session: Session, item_id: int) -> Optional[Item]:
+def get_item(session: Session, item_id: int) -> Item | None:
     """
     Retrieves a single Item by its ID.
 
@@ -102,7 +109,7 @@ def get_item_recipe_usage(
 
 # --- Recipe Queries ---
 
-def get_recipe(session: Session, recipe_id: int) -> Optional[Recipe]:
+def get_recipe(session: Session, recipe_id: int) -> Recipe | None:
     """
     Retrieves a single Recipe by its ID.
 
@@ -198,7 +205,7 @@ def get_all_buildings(session: Session) -> list[str]:
 
 # --- Group Queries ---
 
-def get_group(session: Session, group_id: int) -> Optional[Group]:
+def get_group(session: Session, group_id: int) -> Group | None:
     """
     Retrieves a single Group by its ID.
 
@@ -236,7 +243,7 @@ def get_all_groups(session: Session) -> list[GroupSummary]:
 
 # --- Production Line Queries ---
 
-def get_production_line(session: Session, production_line_id: int) -> Optional[ProductionLine]:
+def get_production_line(session: Session, production_line_id: int) -> ProductionLine | None:
     """
     Retrieves a single ProductionLine by its ID.
 

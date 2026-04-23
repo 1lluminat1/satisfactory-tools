@@ -1,9 +1,9 @@
 import math
-from typing import Optional, Union
 
 from sqlalchemy.orm import Session
 
-from .database import Factory, Group, ProductionLine, Purity, ResourceNode
+from .calculator import calculate_chain
+from .database import Factory, Group, Item, ProductionLine, Purity, ResourceNode
 from .queries import (
     get_all_groups,
     get_group,
@@ -11,7 +11,6 @@ from .queries import (
     get_production_lines_for_group,
     get_resource_nodes_for_group,
 )
-from .calculator import ProductionCalculator, calculate_chain
 from .schemas import ProductionNode
 
 
@@ -42,7 +41,7 @@ def get_max_output(
     session: Session,
     group_id: int,
     item_id: int,
-    preferred_recipes: Optional[dict[int, int]] = None,
+    preferred_recipes: dict[int, int] | None = None,
 ) -> dict:
     """
     Max achievable output rate for an item given a group's available resource nodes.
@@ -239,7 +238,7 @@ def _collect_factory_specs(chain: ProductionNode) -> list[dict]:
 def _build_factories(
     session: Session,
     line: ProductionLine,
-    preferred_recipes: Optional[dict[int, int]] = None,
+    preferred_recipes: dict[int, int] | None = None,
 ) -> None:
     """
     Runs the calculator for a line and persists Factory rows for each step.
@@ -337,7 +336,7 @@ def add_resource_node(
     group_id: int,
     name: str,
     item_id: int,
-    purity: Union[str, Purity],
+    purity: str | Purity,
     extraction_rate: float,
 ) -> ResourceNode:
     """
@@ -424,7 +423,7 @@ def rename_group(
     session: Session,
     group_id: int,
     name: str,
-    description: Optional[str] = None,
+    description: str | None = None,
 ) -> Group:
     """Rename a group and optionally update its description."""
     group = get_group(session, group_id)
@@ -445,9 +444,9 @@ def update_resource_node(
     session: Session,
     node_id: int,
     *,
-    name: Optional[str] = None,
-    purity: Union[str, Purity, None] = None,
-    extraction_rate: Optional[float] = None,
+    name: str | None = None,
+    purity: str | Purity | None = None,
+    extraction_rate: float | None = None,
 ) -> ResourceNode:
     """Update any subset of a resource node's mutable fields."""
     node = session.get(ResourceNode, node_id)
@@ -499,3 +498,109 @@ def delete_resource_node(session: Session, node_id: int) -> None:
         return
     session.delete(node)
     session.commit()
+
+
+# --- Import / export ---
+
+def export_factory_state(session: Session) -> dict:
+    """
+    Serialize all user-created state (groups, production lines, resource nodes) to
+    a JSON-safe dict. Items/recipes/buildings are left out - they come from ETL.
+
+    Items are referenced by class_name so imports are portable across re-ETLs.
+    """
+    groups_out = []
+    for group in session.query(Group).all():
+        groups_out.append({
+            "name": group.name,
+            "description": group.description or "",
+            "production_lines": [
+                {
+                    "name": line.name,
+                    "target_item_class": line.target_item.class_name,
+                    "target_rate": line.target_rate,
+                    "is_active": line.is_active,
+                }
+                for line in group.production_lines
+            ],
+            "resource_nodes": [
+                {
+                    "name": node.name,
+                    "item_class": node.item.class_name,
+                    "purity": node.purity.name if node.purity else "NORMAL",
+                    "extraction_rate": node.extraction_rate,
+                }
+                for node in group.resource_nodes
+            ],
+        })
+    return {"version": 1, "groups": groups_out}
+
+
+def import_factory_state(session: Session, data: dict) -> dict:
+    """
+    Import groups/lines/nodes from an export dict. Appends to existing state
+    (does not wipe). Returns a summary of what was imported or skipped.
+    """
+    summary = {"groups": 0, "lines": 0, "nodes": 0, "skipped_items": []}
+    for group_data in data.get("groups", []):
+        group = create_group(
+            session, group_data["name"], group_data.get("description", "")
+        )
+        summary["groups"] += 1
+
+        for node_data in group_data.get("resource_nodes", []):
+            item = session.query(Item).filter_by(class_name=node_data["item_class"]).first()
+            if item is None:
+                summary["skipped_items"].append(node_data["item_class"])
+                continue
+            add_resource_node(
+                session, group.id, node_data["name"], item.id,
+                node_data.get("purity", "NORMAL"),
+                node_data.get("extraction_rate", 0.0),
+            )
+            summary["nodes"] += 1
+
+        for line_data in group_data.get("production_lines", []):
+            item = session.query(Item).filter_by(
+                class_name=line_data["target_item_class"]
+            ).first()
+            if item is None:
+                summary["skipped_items"].append(line_data["target_item_class"])
+                continue
+            line = create_production_line(
+                session, group.id, line_data["name"], item.id,
+                line_data.get("target_rate", 60.0),
+            )
+            if not line_data.get("is_active", True):
+                set_production_line_active(session, line.id, False)
+            summary["lines"] += 1
+
+    return summary
+
+
+# --- Starter data ---
+
+def create_starter_data(session: Session) -> Group | None:
+    """
+    Seed a small demo group with iron + copper extraction and an Iron Plate line.
+
+    No-op if any groups already exist.
+
+    Returns the new Group, or None if groups already exist or needed items
+    are missing from the ETL-loaded database.
+    """
+    if session.query(Group).count() > 0:
+        return None
+
+    iron_ore = session.query(Item).filter_by(class_name='Desc_OreIron_C').first()
+    copper_ore = session.query(Item).filter_by(class_name='Desc_OreCopper_C').first()
+    iron_plate = session.query(Item).filter_by(class_name='Desc_IronPlate_C').first()
+    if not (iron_ore and iron_plate):
+        return None
+
+    group = create_group(session, "Demo Base", "Starter setup - feel free to edit or delete.")
+    add_resource_node(session, group.id, "Iron Node A", iron_ore.id, "PURE", 240.0)
+    if copper_ore:
+        add_resource_node(session, group.id, "Copper Node A", copper_ore.id, "NORMAL", 120.0)
+    create_production_line(session, group.id, "Iron Plates x60", iron_plate.id, 60.0)
+    return group

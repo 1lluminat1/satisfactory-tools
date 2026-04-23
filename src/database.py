@@ -1,7 +1,8 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, Boolean, ForeignKey, Enum as SQLEnum
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship, sessionmaker
 import enum
+
+from sqlalchemy import Boolean, Column, Float, ForeignKey, Integer, String, create_engine
+from sqlalchemy import Enum as SQLEnum
+from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
 Base = declarative_base()
 

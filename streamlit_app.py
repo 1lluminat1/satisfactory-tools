@@ -1,12 +1,14 @@
+import json
 import os
 
 import streamlit as st
 from dotenv import load_dotenv
 
+from src.cache import cached_all_items
 from src.database import get_engine, get_session, Purity
+from src.game_constants import MINER_TIERS, default_extraction_rate, minimum_belt_tier
 from src.queries import (
     get_all_groups,
-    get_all_items,
     get_factories_for_production_line,
     get_resource_nodes_for_group,
 )
@@ -14,11 +16,14 @@ from src.production import (
     add_resource_node,
     create_group,
     create_production_line,
+    create_starter_data,
     delete_group,
     delete_production_line,
     delete_resource_node,
+    export_factory_state,
     get_global_summary,
     get_group_summary,
+    import_factory_state,
     rename_group,
     rename_production_line,
     set_production_line_active,
@@ -42,7 +47,7 @@ try:
     st.set_page_config(page_title="Satisfactory Dashboard", layout="wide")
 
     groups = get_all_groups(session)
-    all_items = get_all_items(session)
+    all_items = cached_all_items(session)
     items_by_name = {item['name']: item['id'] for item in all_items}
     sorted_item_names = sorted(items_by_name.keys())
 
@@ -155,8 +160,18 @@ try:
         name = st.text_input("Name")
         item_name = st.selectbox("Item:", sorted_item_names)
         purity = st.selectbox("Purity:", [p.name for p in Purity])
+        miner_tier = st.selectbox(
+            "Miner tier (for auto-fill)",
+            ["custom", *MINER_TIERS.keys()],
+            index=2,
+        )
+        if miner_tier in MINER_TIERS:
+            suggested = default_extraction_rate(miner_tier, purity)
+            st.caption(f"Auto rate: {suggested:.1f}/min ({miner_tier} on {purity} node)")
+        else:
+            suggested = 60.0
         rate = st.number_input(
-            "Extraction rate (items/min)", min_value=0.01, value=60.0, step=10.0
+            "Extraction rate (items/min)", min_value=0.01, value=float(suggested), step=10.0
         )
         if st.button("Add", key="add_node_submit"):
             if not name.strip():
@@ -246,6 +261,45 @@ try:
 
         if st.button("+ New Group", use_container_width=True):
             create_group_dialog()
+
+        if not groups:
+            if st.button("Load demo data", use_container_width=True):
+                created = create_starter_data(session)
+                if created:
+                    st.success(f"Seeded {created.name}.")
+                    st.rerun()
+                else:
+                    st.warning("Could not seed starter data.")
+
+        st.divider()
+        st.markdown("**Import / Export**")
+        export_bytes = json.dumps(
+            export_factory_state(session), indent=2
+        ).encode("utf-8")
+        st.download_button(
+            "Export factory (.json)",
+            export_bytes,
+            file_name="satisfactory_factory.json",
+            mime="application/json",
+            use_container_width=True,
+        )
+        uploaded = st.file_uploader("Import factory (.json)", type=["json"])
+        if uploaded is not None:
+            try:
+                imported_data = json.loads(uploaded.getvalue().decode("utf-8"))
+                result = import_factory_state(session, imported_data)
+                st.success(
+                    f"Imported: {result['groups']} groups, "
+                    f"{result['lines']} lines, {result['nodes']} nodes."
+                )
+                if result['skipped_items']:
+                    st.warning(
+                        f"Skipped {len(result['skipped_items'])} item(s) "
+                        "not present in the database."
+                    )
+                st.rerun()
+            except (json.JSONDecodeError, KeyError) as exc:
+                st.error(f"Could not parse file: {exc}")
 
     # --- Main: title + global overview ---
 
@@ -358,6 +412,7 @@ try:
                 factories = get_factories_for_production_line(session, details['id'])
                 if factories:
                     st.markdown("*Factories*")
+                    # approximate per-building output rate using this line's target rate
                     st.dataframe(
                         [
                             {
@@ -371,6 +426,14 @@ try:
                         ],
                         use_container_width=True,
                     )
+                    belt_needed = minimum_belt_tier(details['target_rate'])
+                    if belt_needed is None:
+                        st.warning(
+                            f"Line output {details['target_rate']:.1f}/min exceeds Mk6 belts - "
+                            "you'll need to split the flow."
+                        )
+                    elif belt_needed in ("Mk4", "Mk5", "Mk6"):
+                        st.caption(f"Belt tier needed at line output: {belt_needed}")
 
                 st.markdown("*Raw material balance*")
                 if line['balance']:

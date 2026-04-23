@@ -3,9 +3,10 @@ import os
 import streamlit as st
 from dotenv import load_dotenv
 
+from src.cache import cached_all_buildings, cached_all_recipes
 from src.database import get_engine, get_session
 from src.formatters import format_recipe_for_table
-from src.queries import get_all_buildings, get_all_recipes, get_recipe, get_recipe_details
+from src.queries import get_recipe, get_recipe_details
 
 
 load_dotenv()
@@ -13,8 +14,8 @@ engine = get_engine(os.getenv('DATABASE_URL'))
 session = get_session(engine)
 
 try:
-    all_recipes = get_all_recipes(session)
-    all_buildings = get_all_buildings(session)
+    all_recipes = cached_all_recipes(session)
+    all_buildings = cached_all_buildings(session)
 
     st.title("Satisfactory Recipe Browser")
 

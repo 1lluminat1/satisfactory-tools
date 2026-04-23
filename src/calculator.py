@@ -1,12 +1,10 @@
 import math
-from typing import Optional
 
 from sqlalchemy.orm import Session
 
 from .database import Recipe
 from .queries import get_item, get_recipe, get_recipes_for_item
 from .schemas import ProductionNode, RecipeRequirements, ResolvedItem
-
 
 SECONDS_PER_MINUTE = 60
 # In-game power scaling factor for clock-speed adjustments (Satisfactory wiki).
@@ -107,8 +105,8 @@ def calculate_chain(
     item_id: int,
     target_rate: float,
     *,
-    preferred_recipes: Optional[dict[int, int]] = None,
-    _visited: Optional[frozenset[int]] = None,
+    preferred_recipes: dict[int, int] | None = None,
+    _visited: frozenset[int] | None = None,
 ) -> ProductionNode:
     """
     Pure-functional production chain calculator.
@@ -192,7 +190,7 @@ class ProductionCalculator:
     directly - it's pure-functional and easier to test.
     """
 
-    def __init__(self, session: Session, preferred_recipes: Optional[dict[int, int]] = None):
+    def __init__(self, session: Session, preferred_recipes: dict[int, int] | None = None):
         self.session = session
         self.preferred_recipes = preferred_recipes or {}
 
