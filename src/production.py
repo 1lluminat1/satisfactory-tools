@@ -237,6 +237,27 @@ def _build_factories(session: Session, line: ProductionLine) -> None:
 
 # --- Creation ---
 
+def create_group(
+    session: Session,
+    name: str,
+    description: str = "",
+) -> Group:
+    """
+    Creates a group to organize production lines and resource nodes.
+
+    Args:
+        session: An active SQLAlchemy Session.
+        name: Human-readable group name (e.g. "North Base").
+        description: Optional free-form description.
+
+    Returns:
+        The newly created and committed Group.
+    """
+    group = Group(name=name, description=description)
+    session.add(group)
+    session.commit()
+    return group
+
 def create_production_line(
     session: Session,
     group_id: int,
