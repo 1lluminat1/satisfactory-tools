@@ -1,18 +1,26 @@
 import json
 import os
-from dotenv import load_dotenv
-from .database import Base, get_engine, get_session, create_tables
-from .database import Item, Building, Recipe, RecipeIngredient, ItemForm
 import re
 
-from .queries import get_recipe_details
+from dotenv import load_dotenv
+
+from .database import (
+    Base,
+    Building,
+    Item,
+    Recipe,
+    RecipeIngredient,
+    create_tables,
+    get_engine,
+    get_session,
+)
 
 # Load environment variables
 load_dotenv()
 
 def load_json_data():
     """Load the Docs.json file and return the data"""
-    with open('data/Docs.json', 'r', encoding='utf-8') as f:
+    with open('data/Docs.json', encoding='utf-8') as f:
         data = json.load(f)
     return data
 
@@ -35,7 +43,7 @@ def parse_ingredients_or_products(ingredient_string):
     class_names = re.findall(class_pattern, ingredient_string)
     amounts = re.findall(amount_pattern, ingredient_string)
     
-    return list(zip(class_names, amounts))
+    return list(zip(class_names, amounts, strict=False))
 
 def get_or_create_building(session, building_class_name):
     """

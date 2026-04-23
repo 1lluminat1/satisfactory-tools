@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import NotRequired, Optional, TypedDict
+from typing import NotRequired, TypedDict
 
 
 class ResolvedItem(TypedDict):
@@ -38,7 +38,7 @@ class ProductionNode(TypedDict):
     required_rate: float
     is_raw_material: bool
     recipe: NotRequired[RecipeRequirements]
-    dependencies: NotRequired[dict[str, "ProductionNode"]]
+    dependencies: NotRequired[dict[str, ProductionNode]]
     # Subtree totals — always present, even on raw nodes (empty dicts / 0).
     raw_materials: dict[str, float]
     byproducts_totals: dict[str, float]
@@ -63,9 +63,9 @@ class RecipeDetails(TypedDict):
 class ItemDetails(TypedDict):
     id: int
     name: str
-    form: Optional[str]
-    stack_size: Optional[int]
-    sink_points: Optional[int]
+    form: str | None
+    stack_size: int | None
+    sink_points: int | None
 
 
 class RecipeUsageEntry(TypedDict):
@@ -98,7 +98,7 @@ class ProductionLineDetails(TypedDict):
     target_item_name: str
     target_rate: float
     is_active: bool
-    group_id: Optional[int]
+    group_id: int | None
 
 
 class FactoryDetails(TypedDict):
