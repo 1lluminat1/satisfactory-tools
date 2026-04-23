@@ -7,22 +7,36 @@ from src.database import get_engine, get_session, Purity
 from src.queries import (
     get_all_groups,
     get_all_items,
+    get_factories_for_production_line,
     get_resource_nodes_for_group,
 )
 from src.production import (
     add_resource_node,
     create_group,
     create_production_line,
+    delete_group,
+    delete_production_line,
+    delete_resource_node,
     get_global_summary,
     get_group_summary,
+    rename_group,
+    rename_production_line,
     set_production_line_active,
     update_production_line_rate,
+    update_resource_node,
 )
 
 
 load_dotenv()
 engine = get_engine(os.getenv('DATABASE_URL'))
 session = get_session(engine)
+
+
+def _balance_emoji(balance: float) -> str:
+    if balance >= 0:
+        return "OK"
+    return "WARN"
+
 
 try:
     st.set_page_config(page_title="Satisfactory Dashboard", layout="wide")
@@ -45,6 +59,38 @@ try:
                 create_group(session, name.strip(), description.strip())
                 st.rerun()
 
+    @st.dialog("Edit Group")
+    def edit_group_dialog(group_id: int, group_name: str, group_description: str) -> None:
+        new_name = st.text_input("Name", value=group_name)
+        new_description = st.text_area("Description", value=group_description)
+        save, cancel = st.columns(2)
+        with save:
+            if st.button("Save", key=f"edit_group_save_{group_id}", use_container_width=True):
+                if not new_name.strip():
+                    st.error("Name is required.")
+                else:
+                    rename_group(session, group_id, new_name.strip(), new_description.strip())
+                    st.rerun()
+        with cancel:
+            if st.button("Cancel", key=f"edit_group_cancel_{group_id}", use_container_width=True):
+                st.rerun()
+
+        st.divider()
+        confirm = st.checkbox(
+            f"I understand this deletes the group and all its production lines and resource nodes.",
+            key=f"delete_group_confirm_{group_id}",
+        )
+        if st.button(
+            "Delete group",
+            key=f"delete_group_btn_{group_id}",
+            disabled=not confirm,
+            type="primary",
+        ):
+            delete_group(session, group_id)
+            if "selected_group_name" in st.session_state and st.session_state["selected_group_name"] == group_name:
+                del st.session_state["selected_group_name"]
+            st.rerun()
+
     @st.dialog("Add Production Line")
     def add_line_dialog(group_id: int) -> None:
         name = st.text_input("Name")
@@ -57,13 +103,52 @@ try:
                 st.error("Name is required.")
             else:
                 create_production_line(
-                    session,
-                    group_id,
-                    name.strip(),
-                    items_by_name[item_name],
-                    target_rate,
+                    session, group_id, name.strip(),
+                    items_by_name[item_name], target_rate,
                 )
                 st.rerun()
+
+    @st.dialog("Edit Production Line")
+    def edit_line_dialog(line_details: dict) -> None:
+        line_id = line_details['id']
+        new_name = st.text_input("Name", value=line_details['name'])
+        new_rate = st.number_input(
+            "Target rate (items/min)",
+            min_value=0.01,
+            value=float(line_details['target_rate']),
+            step=10.0,
+        )
+        new_active = st.checkbox("Active", value=line_details['is_active'])
+        save, cancel = st.columns(2)
+        with save:
+            if st.button("Save", key=f"edit_line_save_{line_id}", use_container_width=True):
+                if not new_name.strip():
+                    st.error("Name is required.")
+                else:
+                    if new_name.strip() != line_details['name']:
+                        rename_production_line(session, line_id, new_name.strip())
+                    if new_rate != line_details['target_rate']:
+                        update_production_line_rate(session, line_id, new_rate)
+                    if new_active != line_details['is_active']:
+                        set_production_line_active(session, line_id, new_active)
+                    st.rerun()
+        with cancel:
+            if st.button("Cancel", key=f"edit_line_cancel_{line_id}", use_container_width=True):
+                st.rerun()
+
+        st.divider()
+        confirm = st.checkbox(
+            "Confirm delete (also removes associated factory rows)",
+            key=f"delete_line_confirm_{line_id}",
+        )
+        if st.button(
+            "Delete line",
+            key=f"delete_line_btn_{line_id}",
+            disabled=not confirm,
+            type="primary",
+        ):
+            delete_production_line(session, line_id)
+            st.rerun()
 
     @st.dialog("Add Resource Node")
     def add_node_dialog(group_id: int) -> None:
@@ -78,28 +163,86 @@ try:
                 st.error("Name is required.")
             else:
                 add_resource_node(
-                    session,
-                    group_id,
-                    name.strip(),
-                    items_by_name[item_name],
-                    purity,
-                    rate,
+                    session, group_id, name.strip(),
+                    items_by_name[item_name], purity, rate,
                 )
                 st.rerun()
 
-    # --- Sidebar: group picker ---
+    @st.dialog("Edit Resource Node")
+    def edit_node_dialog(node: dict) -> None:
+        node_id = node['id']
+        new_name = st.text_input("Name", value=node['name'])
+        new_purity = st.selectbox(
+            "Purity:", [p.name for p in Purity],
+            index=[p.name for p in Purity].index(node['purity']),
+        )
+        new_rate = st.number_input(
+            "Extraction rate (items/min)",
+            min_value=0.01,
+            value=float(node['extraction_rate']),
+            step=10.0,
+        )
+        save, cancel = st.columns(2)
+        with save:
+            if st.button("Save", key=f"edit_node_save_{node_id}", use_container_width=True):
+                if not new_name.strip():
+                    st.error("Name is required.")
+                else:
+                    update_resource_node(
+                        session, node_id,
+                        name=new_name.strip(),
+                        purity=new_purity,
+                        extraction_rate=new_rate,
+                    )
+                    st.rerun()
+        with cancel:
+            if st.button("Cancel", key=f"edit_node_cancel_{node_id}", use_container_width=True):
+                st.rerun()
+
+        st.divider()
+        confirm = st.checkbox("Confirm delete", key=f"delete_node_confirm_{node_id}")
+        if st.button(
+            "Delete node",
+            key=f"delete_node_btn_{node_id}",
+            disabled=not confirm,
+            type="primary",
+        ):
+            delete_resource_node(session, node_id)
+            st.rerun()
+
+    # --- Sidebar: search + group picker + new group ---
 
     with st.sidebar:
         st.header("Groups")
-        if groups:
-            group_names = [g['name'] for g in groups]
+        group_search = st.text_input("Search groups", key="group_search").strip().lower()
+        filtered_groups = [
+            g for g in groups if not group_search or group_search in g['name'].lower()
+        ]
+
+        selected_group_id = None
+        if filtered_groups:
+            group_names = [g['name'] for g in filtered_groups]
             selected_name = st.radio(
-                "Select a group:", group_names, key="selected_group_name"
+                "Select a group:",
+                group_names,
+                key="selected_group_name",
             )
-            selected_group_id = next(g['id'] for g in groups if g['name'] == selected_name)
+            selected = next((g for g in filtered_groups if g['name'] == selected_name), None)
+            selected_group_id = selected['id'] if selected else None
+
+            if selected:
+                if st.button(
+                    "Edit selected group",
+                    key="edit_group_btn",
+                    use_container_width=True,
+                ):
+                    edit_group_dialog(
+                        selected['id'], selected['name'], selected['description'] or ""
+                    )
+        elif group_search:
+            st.write("No matches.")
         else:
             st.write("No groups yet.")
-            selected_group_id = None
 
         if st.button("+ New Group", use_container_width=True):
             create_group_dialog()
@@ -111,15 +254,19 @@ try:
     summary = get_global_summary(session)
 
     st.header("Global Overview")
-    col1, col2, col3 = st.columns(3)
-    with col1:
+    m1, m2, m3, m4, m5 = st.columns(5)
+    with m1:
         st.metric("Groups", len(summary['groups']))
-    with col2:
+    with m2:
         st.metric(
             "Production Lines",
             sum(len(g['production_lines']) for g in summary['groups']),
         )
-    with col3:
+    with m3:
+        st.metric("Buildings (active)", summary['total_buildings'])
+    with m4:
+        st.metric("Power (active)", f"{summary['total_power_mw']:.1f} MW")
+    with m5:
         st.metric("Raw Materials", len(summary['global_resource_totals']))
 
     totals_col, balance_col = st.columns(2)
@@ -127,10 +274,8 @@ try:
         st.subheader("Global Resource Totals")
         if summary['global_resource_totals']:
             st.dataframe(
-                [
-                    {"material": m, "rate": r}
-                    for m, r in summary['global_resource_totals'].items()
-                ],
+                [{"material": m, "rate": r}
+                 for m, r in summary['global_resource_totals'].items()],
                 use_container_width=True,
             )
         else:
@@ -139,10 +284,8 @@ try:
         st.subheader("Global Balance")
         if summary['global_balance']:
             st.dataframe(
-                [
-                    {"material": m, "balance": b}
-                    for m, b in summary['global_balance'].items()
-                ],
+                [{"status": _balance_emoji(b), "material": m, "balance": b}
+                 for m, b in summary['global_balance'].items()],
                 use_container_width=True,
             )
         else:
@@ -158,6 +301,14 @@ try:
         group_summary = get_group_summary(session, selected_group_id)
         st.subheader(group_summary['name'])
 
+        gm1, gm2, gm3 = st.columns(3)
+        with gm1:
+            st.metric("Buildings", group_summary['total_buildings'])
+        with gm2:
+            st.metric("Power", f"{group_summary['total_power_mw']:.1f} MW")
+        with gm3:
+            st.metric("Production Lines", len(group_summary['production_lines']))
+
         action_cols = st.columns(2)
         with action_cols[0]:
             if st.button("+ Add Production Line", use_container_width=True):
@@ -171,10 +322,8 @@ try:
             st.markdown("**Resource Totals**")
             if group_summary['resource_totals']:
                 st.dataframe(
-                    [
-                        {"material": m, "rate": r}
-                        for m, r in group_summary['resource_totals'].items()
-                    ],
+                    [{"material": m, "rate": r}
+                     for m, r in group_summary['resource_totals'].items()],
                     use_container_width=True,
                 )
             else:
@@ -183,10 +332,8 @@ try:
             st.markdown("**Overall Balance**")
             if group_summary['overall_balance']:
                 st.dataframe(
-                    [
-                        {"material": m, "balance": b}
-                        for m, b in group_summary['overall_balance'].items()
-                    ],
+                    [{"status": _balance_emoji(b), "material": m, "balance": b}
+                     for m, b in group_summary['overall_balance'].items()],
                     use_container_width=True,
                 )
             else:
@@ -197,16 +344,40 @@ try:
             st.write("No production lines in this group.")
         for line in group_summary['production_lines']:
             details = line['details']
+            bottleneck_txt = (
+                f" - bottleneck: {line['bottleneck']}" if line.get('bottleneck') else ""
+            )
             header = (
                 f"{details['name']} - {details['target_item_name']} "
-                f"@ {details['target_rate']}/min"
-                + ("" if details['is_active'] else " (inactive)")
+                f"@ {details['target_rate']}/min "
+                f"({line['building_count']} bldgs, {line['power_mw']:.1f} MW)"
+                + bottleneck_txt
+                + ("" if details['is_active'] else " [INACTIVE]")
             )
             with st.expander(header):
+                factories = get_factories_for_production_line(session, details['id'])
+                if factories:
+                    st.markdown("*Factories*")
+                    st.dataframe(
+                        [
+                            {
+                                "order": f['order'],
+                                "recipe": f['recipe_name'],
+                                "building": f['building_name'],
+                                "count": f['building_count'],
+                                "clock %": round(f['clock_speed'], 1),
+                            }
+                            for f in factories
+                        ],
+                        use_container_width=True,
+                    )
+
+                st.markdown("*Raw material balance*")
                 if line['balance']:
                     st.dataframe(
                         [
                             {
+                                "status": _balance_emoji(entry['balance']),
                                 "material": mat,
                                 "required": entry['required'],
                                 "available": entry['available'],
@@ -219,27 +390,8 @@ try:
                 else:
                     st.write("No raw material requirements.")
 
-                edit_rate_col, edit_active_col = st.columns(2)
-                with edit_rate_col:
-                    new_rate = st.number_input(
-                        "New rate (items/min)",
-                        min_value=0.01,
-                        value=float(details['target_rate']),
-                        step=10.0,
-                        key=f"rate_{details['id']}",
-                    )
-                    if st.button("Update rate", key=f"update_rate_{details['id']}"):
-                        update_production_line_rate(session, details['id'], new_rate)
-                        st.rerun()
-                with edit_active_col:
-                    new_active = st.checkbox(
-                        "Active",
-                        value=details['is_active'],
-                        key=f"active_{details['id']}",
-                    )
-                    if st.button("Apply active state", key=f"apply_active_{details['id']}"):
-                        set_production_line_active(session, details['id'], new_active)
-                        st.rerun()
+                if st.button("Edit / delete", key=f"edit_line_open_{details['id']}"):
+                    edit_line_dialog(details)
 
         st.markdown("**Resource Nodes**")
         nodes = get_resource_nodes_for_group(session, selected_group_id)
@@ -257,6 +409,19 @@ try:
                 ],
                 use_container_width=True,
             )
+
+            node_labels = {f"{n['name']} ({n['item_name']})": n for n in nodes}
+            col_pick, col_edit = st.columns([3, 1])
+            with col_pick:
+                picked_label = st.selectbox(
+                    "Node to edit:",
+                    list(node_labels.keys()),
+                    key="node_edit_pick",
+                )
+            with col_edit:
+                st.write("")  # align
+                if st.button("Edit node", use_container_width=True):
+                    edit_node_dialog(node_labels[picked_label])
         else:
             st.write("No resource nodes in this group.")
 

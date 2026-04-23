@@ -38,66 +38,76 @@ def get_group_resource_totals(session: Session, group_id: int) -> dict[str, floa
 
     return totals
 
-def get_max_output(session: Session, group_id: int, item_id: int) -> float:
+def get_max_output(
+    session: Session,
+    group_id: int,
+    item_id: int,
+    preferred_recipes: Optional[dict[int, int]] = None,
+) -> dict:
     """
-    Calculates the maximum achievable output rate for an item given a group's available resource nodes.
+    Max achievable output rate for an item given a group's available resource nodes.
 
-    Runs the production calculator at a rate of 1/min to determine raw material ratios,
-    then finds the bottleneck material by comparing available supply against required rates.
-
-    Args:
-        session: An active SQLAlchemy Session.
-        group_id: The primary key of the Group whose resource nodes will be used.
-        item_id: The primary key of the Item to calculate max output for.
+    Runs the calculator at 1/min to get raw-material ratios, then finds the limiting
+    material (bottleneck) among the group's extraction totals.
 
     Returns:
-        The maximum achievable output rate in items/min as a float.
-        Returns 0.0 if the group is missing one or more required raw materials entirely.
+        A dict with:
+            - max_rate (float): Items/min achievable. 0.0 if any required raw material
+              is missing from the group entirely.
+            - bottleneck (Optional[str]): Name of the limiting material, or None if
+              the item has no raw-material requirements, or the name of the first
+              missing material if max_rate is 0.
+            - missing (list[str]): Raw materials the group doesn't supply at all.
     """
-    calculator = ProductionCalculator(session)
-    result = []
     group_totals = get_group_resource_totals(session, group_id)
-    node = calculator.calculate(item_id, 1.0)
+    node = calculate_chain(session, item_id, 1.0, preferred_recipes=preferred_recipes)
+    raw = node['raw_materials']
 
-    for resource in node['raw_materials']:
-        if resource not in group_totals:
-            return 0.0 # group is missing required raw materials for item
-        result.append(group_totals[resource] / node['raw_materials'][resource])
-    
-    return min(result)
+    missing = [r for r in raw if r not in group_totals]
+    if missing:
+        return {"max_rate": 0.0, "bottleneck": missing[0], "missing": missing}
+
+    if not raw:
+        return {"max_rate": float('inf'), "bottleneck": None, "missing": []}
+
+    ratios = {r: group_totals[r] / raw[r] for r in raw}
+    bottleneck = min(ratios, key=ratios.get)
+    return {"max_rate": ratios[bottleneck], "bottleneck": bottleneck, "missing": []}
 
 def get_resource_balance(session: Session, production_line_id: int) -> dict:
     """
-    Calculates the resource balance for a production line against its group's available supply.
+    Per-material balance for a production line vs. its group's supply.
 
-    For each raw material required by the production line, compares the group's total
-    extraction rate against what the line consumes, returning the surplus or deficit.
-
-    Args:
-        session: An active SQLAlchemy Session.
-        production_line_id: The primary key of the ProductionLine to evaluate.
-
-    Returns:
-        A dict mapping raw material name to a balance entry containing:
-            - required (float): Rate consumed by the production line in items/min.
-            - available (float): Rate supplied by the group's resource nodes in items/min.
-            - balance (float): Surplus (positive) or deficit (negative) in items/min.
+    Returns a dict keyed by raw-material name with {required, available, balance}
+    entries; the special key "__line__" carries line-level totals: power_mw,
+    building_count, and bottleneck (the most-deficient material, or None).
     """
-    balance = {}
-    calculator = ProductionCalculator(session)
+    balance: dict = {}
     production_line = get_production_line(session, production_line_id)
     group_totals = get_group_resource_totals(session, production_line.group_id)
-    raw_materials = calculator.calculate(
-        production_line.target_item_id, production_line.target_rate
-    )['raw_materials']
 
-    for resource in raw_materials:
+    chain = calculate_chain(
+        session, production_line.target_item_id, production_line.target_rate
+    )
+    raw_materials = chain['raw_materials']
+
+    for resource, required in raw_materials.items():
+        available = group_totals.get(resource, 0.0)
         balance[resource] = {
-            'required': raw_materials[resource],
-            'available': group_totals.get(resource, 0.0),
-            'balance': group_totals.get(resource, 0.0) - raw_materials[resource]
+            'required': required,
+            'available': available,
+            'balance': available - required,
         }
 
+    bottleneck = None
+    if balance:
+        bottleneck = min(balance, key=lambda m: balance[m]['balance'])
+
+    balance['__line__'] = {
+        'power_mw': chain['power_mw_total'],
+        'building_count': sum(math.ceil(c) for c in chain['building_summary'].values()),
+        'bottleneck': bottleneck,
+    }
     return balance
 
 def get_group_summary(session: Session, group_id: int) -> dict:
@@ -124,23 +134,35 @@ def get_group_summary(session: Session, group_id: int) -> dict:
     group_totals = get_group_resource_totals(session, group.id)
     lines = []
     overall_balance = group_totals.copy()
+    total_power_mw = 0.0
+    total_buildings = 0
 
     for line in get_production_lines_for_group(session, group.id):
         balance = get_resource_balance(session, line['id'])
+        line_meta = balance.pop('__line__', {'power_mw': 0.0, 'building_count': 0, 'bottleneck': None})
         lines.append({
             "details": line,
-            "balance": balance
+            "balance": balance,
+            "power_mw": line_meta['power_mw'],
+            "building_count": line_meta['building_count'],
+            "bottleneck": line_meta['bottleneck'],
         })
 
-        for mat in balance:
-            overall_balance[mat] = overall_balance.get(mat, 0) - balance[mat]['required']
+        for mat, entry in balance.items():
+            overall_balance[mat] = overall_balance.get(mat, 0) - entry['required']
+
+        if line['is_active']:
+            total_power_mw += line_meta['power_mw']
+            total_buildings += line_meta['building_count']
 
     return {
         "id": group.id,
         "name": group.name,
         "resource_totals": group_totals,
         "production_lines": lines,
-        "overall_balance": overall_balance
+        "overall_balance": overall_balance,
+        "total_power_mw": total_power_mw,
+        "total_buildings": total_buildings,
     }
 
 def get_global_summary(session: Session) -> dict:
@@ -162,16 +184,22 @@ def get_global_summary(session: Session) -> dict:
 
     global_totals: dict[str, float] = {}
     global_balance: dict[str, float] = {}
+    total_power_mw = 0.0
+    total_buildings = 0
     for summary in summaries:
         for mat, rate in summary['resource_totals'].items():
             global_totals[mat] = global_totals.get(mat, 0.0) + rate
         for mat, bal in summary['overall_balance'].items():
             global_balance[mat] = global_balance.get(mat, 0.0) + bal
+        total_power_mw += summary.get('total_power_mw', 0.0)
+        total_buildings += summary.get('total_buildings', 0)
 
     return {
         "groups": summaries,
         "global_resource_totals": global_totals,
         "global_balance": global_balance,
+        "total_power_mw": total_power_mw,
+        "total_buildings": total_buildings,
     }
 
 
@@ -389,3 +417,85 @@ def set_production_line_active(
     line.is_active = is_active
     session.commit()
     return line
+
+# --- Rename / update ---
+
+def rename_group(
+    session: Session,
+    group_id: int,
+    name: str,
+    description: Optional[str] = None,
+) -> Group:
+    """Rename a group and optionally update its description."""
+    group = get_group(session, group_id)
+    group.name = name
+    if description is not None:
+        group.description = description
+    session.commit()
+    return group
+
+def rename_production_line(session: Session, production_line_id: int, name: str) -> ProductionLine:
+    """Rename a production line."""
+    line = get_production_line(session, production_line_id)
+    line.name = name
+    session.commit()
+    return line
+
+def update_resource_node(
+    session: Session,
+    node_id: int,
+    *,
+    name: Optional[str] = None,
+    purity: Union[str, Purity, None] = None,
+    extraction_rate: Optional[float] = None,
+) -> ResourceNode:
+    """Update any subset of a resource node's mutable fields."""
+    node = session.get(ResourceNode, node_id)
+    if node is None:
+        raise ValueError(f"ResourceNode {node_id} not found")
+    if name is not None:
+        node.name = name
+    if purity is not None:
+        node.purity = Purity(purity) if isinstance(purity, str) else purity
+    if extraction_rate is not None:
+        node.extraction_rate = extraction_rate
+    session.commit()
+    return node
+
+
+# --- Delete ---
+
+def delete_group(session: Session, group_id: int) -> None:
+    """
+    Delete a group and everything it owns: production lines (+ their factories) and
+    resource nodes. Safe even if the group has no children.
+    """
+    group = get_group(session, group_id)
+    if group is None:
+        return
+    for line in list(group.production_lines):
+        for factory in list(line.factories):
+            session.delete(factory)
+        session.delete(line)
+    for node in list(group.resource_nodes):
+        session.delete(node)
+    session.delete(group)
+    session.commit()
+
+def delete_production_line(session: Session, production_line_id: int) -> None:
+    """Delete a production line and its factories."""
+    line = get_production_line(session, production_line_id)
+    if line is None:
+        return
+    for factory in list(line.factories):
+        session.delete(factory)
+    session.delete(line)
+    session.commit()
+
+def delete_resource_node(session: Session, node_id: int) -> None:
+    """Delete a resource node."""
+    node = session.get(ResourceNode, node_id)
+    if node is None:
+        return
+    session.delete(node)
+    session.commit()
