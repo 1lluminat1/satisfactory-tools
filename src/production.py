@@ -1,11 +1,17 @@
 import math
-from typing import Union
+from typing import Optional, Union
 
 from sqlalchemy.orm import Session
 
-from .database import Factory, Group, Item, ProductionLine, Purity, ResourceNode
-from .queries import get_group, get_production_lines_for_group, get_resource_nodes_for_group, get_production_line, get_all_groups
-from .calculator import ProductionCalculator
+from .database import Factory, Group, ProductionLine, Purity, ResourceNode
+from .queries import (
+    get_all_groups,
+    get_group,
+    get_production_line,
+    get_production_lines_for_group,
+    get_resource_nodes_for_group,
+)
+from .calculator import ProductionCalculator, calculate_chain
 from .schemas import ProductionNode
 
 
@@ -175,33 +181,25 @@ def _collect_factory_specs(chain: ProductionNode) -> list[dict]:
     """
     Walks a production chain and aggregates per-recipe building requirements.
 
-    Recipes that appear in multiple branches of the chain have their building counts
-    summed. The returned list is ordered from deepest-dependency first (closest to
-    raw materials) to the final target recipe last, so order values match processing
-    flow.
-
-    Args:
-        chain: A production chain produced by ProductionCalculator.calculate().
-
-    Returns:
-        A list of dicts, each containing recipe_id, recipe_name, and num_buildings,
-        sorted by processing order (earliest step first).
+    When a recipe appears in multiple subtrees, its ideal building count is summed
+    and the highest depth wins for ordering. Returned list is ordered from deepest
+    (closest to raw) first to the target recipe last.
     """
     specs: dict[int, dict] = {}
 
     def visit(node: ProductionNode, depth: int) -> None:
         if node.get('is_raw_material'):
             return
-        req = node['requirements']
+        req = node['recipe']
         rid = req['recipe_id']
         if rid in specs:
-            specs[rid]['num_buildings'] += req['num_buildings']
+            specs[rid]['num_ideal'] += req['num_buildings_ideal']
             specs[rid]['depth'] = max(specs[rid]['depth'], depth)
         else:
             specs[rid] = {
                 'recipe_id': rid,
                 'recipe_name': req['recipe_name'],
-                'num_buildings': req['num_buildings'],
+                'num_ideal': req['num_buildings_ideal'],
                 'depth': depth,
             }
         for dep in node.get('dependencies', {}).values():
@@ -210,27 +208,37 @@ def _collect_factory_specs(chain: ProductionNode) -> list[dict]:
     visit(chain, 0)
     return sorted(specs.values(), key=lambda s: -s['depth'])
 
-def _build_factories(session: Session, line: ProductionLine) -> None:
+def _build_factories(
+    session: Session,
+    line: ProductionLine,
+    preferred_recipes: Optional[dict[int, int]] = None,
+) -> None:
     """
-    Runs the production calculator for a line and persists Factory rows for each step.
+    Runs the calculator for a line and persists Factory rows for each step.
 
-    Does not commit — the caller owns the transaction boundary.
-
-    Args:
-        session: An active SQLAlchemy Session.
-        line: The ProductionLine to generate factories for. Must already be persisted
-              (i.e. have an id).
+    For each recipe in the chain, creates a Factory with `building_count` = ceil of the
+    ideal count and `clock_speed` = the fractional percentage needed so the rounded
+    count hits the exact target rate. Does not commit.
     """
-    calculator = ProductionCalculator(session)
-    chain = calculator.calculate(line.target_item_id, line.target_rate)
+    from .calculator import calculate_chain
+
+    chain = calculate_chain(
+        session,
+        line.target_item_id,
+        line.target_rate,
+        preferred_recipes=preferred_recipes,
+    )
 
     for order, spec in enumerate(_collect_factory_specs(chain), start=1):
+        num_ideal = spec['num_ideal']
+        num_rounded = max(1, math.ceil(num_ideal))
+        clock_speed = 100.0 * num_ideal / num_rounded
         session.add(Factory(
             name=f"{spec['recipe_name']} ({line.name})",
             production_line_id=line.id,
             recipe_id=spec['recipe_id'],
-            building_count=math.ceil(spec['num_buildings']),
-            clock_speed=100.0,
+            building_count=num_rounded,
+            clock_speed=clock_speed,
             order=order,
         ))
 

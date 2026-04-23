@@ -2,9 +2,16 @@ from typing import Any, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .schemas import FactoryDetails, GroupSummary, ItemDetails, ProductionLineDetails, RecipeDetails, RecipeUsageEntry, ResourceNodeDetails
-
 from .database import Building, Factory, Group, Item, ProductionLine, Recipe, RecipeIngredient, ResourceNode
+from .schemas import (
+    FactoryDetails,
+    GroupSummary,
+    ItemDetails,
+    ProductionLineDetails,
+    RecipeDetails,
+    RecipeUsageEntry,
+    ResourceNodeDetails,
+)
 
 
 # --- Helpers ---
@@ -18,11 +25,13 @@ def _serialize_item(item: Item) -> ItemDetails:
 
     Returns:
         An ItemDetails dict containing the item's id, name, form, stack_size, and sink_points.
+        The form is serialized as its string name (e.g. "SOLID") to keep the result
+        Arrow-compatible for Streamlit dataframe rendering.
     """
     return {
         "id": item.id,
         "name": item.name,
-        "form": item.form,
+        "form": item.form.name if item.form else None,
         "stack_size": item.stack_size,
         "sink_points": item.sink_points
     }
@@ -326,7 +335,7 @@ def get_resource_nodes_for_group(session: Session, group_id: int) -> list[Resour
             "name": node.name,
             "item_id": node.item_id,
             "item_name": node.item.name,
-            "purity": node.purity,
+            "purity": node.purity.name if node.purity else "NORMAL",
             "extraction_rate": node.extraction_rate
         }
         for node in nodes

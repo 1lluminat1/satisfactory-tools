@@ -250,7 +250,7 @@ try:
                         "id": n['id'],
                         "name": n['name'],
                         "item": n['item_name'],
-                        "purity": n['purity'].name,
+                        "purity": n['purity'],
                         "extraction_rate": n['extraction_rate'],
                     }
                     for n in nodes

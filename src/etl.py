@@ -50,11 +50,48 @@ def get_or_create_building(session, building_class_name):
         building = Building(
             class_name=building_class_name,
             name=name,
-            description=""  # No description available
+            description="",
+            power_mw=0.0,
         )
         session.add(building)
         session.flush()
     return building
+
+
+def load_building_power(session, data):
+    """
+    Populate Building.power_mw from FGBuildableManufacturer entries in Docs.json.
+
+    Variable-power buildings (e.g. Particle Accelerator) use their estimated max
+    as a pessimistic planning value.
+    """
+    manufacturer_natives = (
+        "FGBuildableManufacturer",
+        "FGBuildableManufacturerVariablePower",
+    )
+    updates = 0
+    for entry in data:
+        native = entry.get("NativeClass", "")
+        if not any(n in native for n in manufacturer_natives):
+            continue
+        for building_data in entry["Classes"]:
+            class_name = building_data.get("ClassName")
+            if not class_name:
+                continue
+            building = session.query(Building).filter_by(class_name=class_name).first()
+            if building is None:
+                continue
+            try:
+                if "mEstimatedMaximumPowerConsumption" in building_data:
+                    power = float(building_data["mEstimatedMaximumPowerConsumption"])
+                else:
+                    power = float(building_data.get("mPowerConsumption", 0) or 0)
+            except (TypeError, ValueError):
+                power = 0.0
+            building.power_mw = power
+            updates += 1
+    session.commit()
+    print(f"Set power_mw on {updates} buildings")
 
 def load_recipes(session, data):
     """Load all recipes from JSON data"""
@@ -102,12 +139,9 @@ def load_recipes(session, data):
                 
                 # Parse and add ingredients (inputs)
                 ingredients = parse_ingredients_or_products(recipe_data.get("mIngredients", ""))
-                print(f"Recipe: {recipe_data['mDisplayName']}")
-                print(f"  Parsed ingredients: {ingredients}")
                 for class_name_part, amount in ingredients:
                     full_class_name = f"Desc_{class_name_part}_C"
                     item = session.query(Item).filter_by(class_name=full_class_name).first()
-                    print(f"  Looking for {full_class_name}: {'Found' if item else 'NOT FOUND'}")
                     if item:
                         ingredient = RecipeIngredient(
                             quantity=int(amount),
@@ -172,6 +206,7 @@ def main():
     session.commit()
 
     load_recipes(session, data)
+    load_building_power(session, data)
 
     items = session.query(Item).all()
     print(f"✅ Loaded {len(items)} items")

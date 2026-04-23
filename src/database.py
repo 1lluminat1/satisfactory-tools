@@ -34,12 +34,13 @@ class Item(Base):
 
 class Building(Base):
     __tablename__ = 'buildings'
-    
+
     id = Column(Integer, primary_key=True)
     class_name = Column(String(200), unique=True, nullable=False)
     name = Column(String(200), nullable=False)
     description = Column(String, default="")
-    
+    power_mw = Column(Float, default=0.0, nullable=False)
+
     recipes = relationship("Recipe", back_populates="building")
 
 class Recipe(Base):

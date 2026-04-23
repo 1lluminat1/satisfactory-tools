@@ -20,10 +20,11 @@ def render_chain(node: dict, depth: int = 0) -> None:
         st.write(f"Raw material: **{node['item_name']}** @ {node['required_rate']:.2f}/min")
         return
 
-    req = node['requirements']
+    req = node['recipe']
     label = (
         f"{req['output']['item_name']} @ {req['output']['rate']:.2f}/min "
-        f"- {req['num_buildings']:.2f}x {req['building_name']} ({req['recipe_name']})"
+        f"- {req['num_buildings_rounded']}x {req['building_name']} "
+        f"@ {req['clock_speed']:.1f}% clock ({req['recipe_name']})"
     )
     with st.expander(label, expanded=depth == 0):
         if req['inputs']:
