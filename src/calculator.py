@@ -1,221 +1,212 @@
+import math
+from typing import Optional
+
 from sqlalchemy.orm import Session
 
-from .schemas import InputItem, OutputItem, ProductionNode, RecipeRequirements
 from .database import Recipe
 from .queries import get_item, get_recipe, get_recipes_for_item
+from .schemas import ProductionNode, RecipeRequirements, ResolvedItem
 
 
 SECONDS_PER_MINUTE = 60
+# In-game power scaling factor for clock-speed adjustments (Satisfactory wiki).
+CLOCK_POWER_EXPONENT = 1.321
 
 
-class ProductionCalculator:
+def _rate_per_minute(crafting_time: float, quantity: int) -> float:
+    """Items per minute produced by one building at 100% clock for this recipe."""
+    return (SECONDS_PER_MINUTE / crafting_time) * quantity
+
+
+def _power_for(building_power: float, num_buildings: int, clock_speed: float) -> float:
+    """Total MW draw for N buildings running at clock_speed (%) using the in-game formula."""
+    return building_power * num_buildings * (clock_speed / 100.0) ** CLOCK_POWER_EXPONENT
+
+
+def _compute_requirements(recipe: Recipe, item_id: int, target_rate: float) -> RecipeRequirements:
     """
-    Calculates the full production chain for a given item and target output rate.
+    Builds a RecipeRequirements for `recipe` producing `item_id` at `target_rate`/min.
 
-    Recursively resolves dependencies, accumulating building counts and raw material
-    requirements across the entire chain. Instantiate once per calculation to ensure
-    building_summary and raw_materials are scoped to a single run.
-
-    Attributes:
-        session: Active SQLAlchemy database session.
-        building_summary: Aggregated building counts across the entire production chain.
-        raw_materials: Aggregated raw material rates across the entire production chain.
+    Rounds up to whole buildings and computes the clock speed needed so that the
+    rounded building count hits the target rate exactly.
     """
-    def __init__(self, session: Session):
-        """
-        Initializes the calculator with a database session and empty accumulators.
+    output_ingredient = next(
+        (i for i in recipe.ingredients if i.is_output and i.item_id == item_id),
+        None,
+    )
+    if output_ingredient is None:
+        raise ValueError(f"Recipe {recipe.id} does not output item {item_id}")
 
-        Args:
-            session: An active SQLAlchemy Session used for all database queries.
-        """
-        self.session = session
-        self.building_summary: dict[str, float] = {}
-        self.raw_materials: dict[str, float] = {}
+    per_building_rate = _rate_per_minute(recipe.crafting_time, output_ingredient.quantity)
+    num_ideal = target_rate / per_building_rate
+    num_rounded = max(1, math.ceil(num_ideal))
+    clock_speed = 100.0 * num_ideal / num_rounded
 
-    def _resolve_recipes(self, recipes: list[Recipe]) -> Recipe:
-        """
-        Selects a recipe from a list of candidates.
+    building_power = recipe.building.power_mw or 0.0
+    total_power = _power_for(building_power, num_rounded, clock_speed)
 
-        Currently returns the first recipe. Intended as an extension point for
-        alternate recipe selection logic in the future.
-
-        Args:
-            recipes: A non-empty list of Recipe candidates for an item.
-
-        Returns:
-            The selected Recipe to use for calculation.
-        """
-        return recipes[0]
-    
-    def _process_dependencies(self, inputs: list[InputItem]) -> dict[str, ProductionNode]:
-        """
-        Recursively calculates production chains for all input ingredients.
-
-        For each input, calls calculate() and accumulates the results into
-        self.building_summary and self.raw_materials.
-
-        Args:
-            inputs: List of input items required by a recipe, each with item_id and rate.
-
-        Returns:
-            A dictionary mapping item names to their resolved ProductionNode.
-        """
-        dependencies = {}
-        for item in inputs:
-            dep = self.calculate(item['item_id'], item['rate'])
-            dependencies[item['item_name']] = dep
-
-            if dep.get('is_raw_material'):
-                self.raw_materials[dep['item_name']] = self.raw_materials.get(dep['item_name'], 0) + item['rate']
-            else:
-                for building, count in dep['building_summary'].items():
-                    self.building_summary[building] = self.building_summary.get(building, 0) + count
-                for name, count in dep['raw_materials'].items():
-                    self.raw_materials[name] = self.raw_materials.get(name, 0) + count
-        return dependencies
-
-    def calculate(self, item_id: int, target_rate: float) -> ProductionNode:
-        """
-        Recursively calculates the production chain for an item at a target rate.
-
-        If the item has no recipes in the database, it is treated as a raw material
-        and returned as a terminal node. Otherwise, resolves the recipe, calculates
-        requirements, and recurses into all input dependencies.
-
-        Args:
-            item_id: The database ID of the item to produce.
-            target_rate: The desired output rate in items per minute.
-
-        Returns:
-            A ProductionNode representing the full production chain for this item.
-        """
-        recipes: list[Recipe] = get_recipes_for_item(self.session, item_id)
-
-        if not recipes:
-            item = get_item(self.session, item_id)
-            return {
-                "item_id": item_id,
-                "item_name": item.name,
-                "required_rate": target_rate,
-                "is_raw_material": True
-            }
-        
-        recipe: Recipe = self._resolve_recipes(recipes)
-        requirements = calculate_recipe_requirements(self.session, recipe.id, item_id, target_rate)
-        dependencies = self._process_dependencies(requirements['inputs'])
-
-        key = requirements['building_name']
-        self.building_summary[key] = self.building_summary.get(key, 0) + requirements['num_buildings']
-
-        return {
-            "target": {
-                "item": recipe.name,
-                "rate": target_rate,
-                "recipe": f"{recipe.name} ({recipe.building.name})"
-            },
-            "requirements": requirements,
-            "dependencies": dependencies,
-            "raw_materials": self.raw_materials,
-            "building_summary": self.building_summary
+    inputs: list[ResolvedItem] = []
+    byproducts: list[ResolvedItem] = []
+    for ing in recipe.ingredients:
+        # rate scales with ideal buildings (not rounded) because we clock-adjust
+        rate = _rate_per_minute(recipe.crafting_time, ing.quantity) * num_ideal
+        entry: ResolvedItem = {
+            "item_id": ing.item_id,
+            "item_name": ing.item.name,
+            "rate": rate,
         }
-
-def _find_output(recipe: Recipe, item_id: int, target_rate: float) -> tuple[OutputItem, float]:
-    """
-    Finds the matching output ingredient in a recipe and calculates the number of buildings needed.
-
-    Args:
-        recipe: The Recipe to search for the output ingredient.
-        item_id: The item ID of the desired output.
-        target_rate: The desired output rate in items per minute.
-
-    Returns:
-        A tuple of (OutputItem, num_buildings) where num_buildings is the number of
-        buildings required to achieve the target rate.
-
-    Raises:
-        ValueError: If no output ingredient matching item_id is found in the recipe.
-    """
-    for ingredient in recipe.ingredients:
-        if ingredient.is_output and ingredient.item_id == item_id:
-            num_buildings = target_rate / (
-                (SECONDS_PER_MINUTE / recipe.crafting_time) * ingredient.quantity
-            )
-            output: OutputItem = {
-                "item_id": item_id,
-                "item_name": ingredient.item.name,
-                "rate": target_rate
-            }
-            return output, num_buildings
-    raise ValueError(f"No output found for item {item_id} in recipe {recipe.id}")
-
-def _collect_inputs_and_byproducts(recipe: Recipe, item_id: int, num_buildings: int) -> tuple[list[InputItem], list[InputItem]]:
-    """
-    Separates a recipe's ingredients into inputs and byproducts at the given building count.
-
-    Args:
-        recipe: The Recipe whose ingredients will be categorized.
-        item_id: The primary output item ID, used to exclude it from byproducts.
-        num_buildings: The number of buildings running, used to calculate actual rates.
-
-    Returns:
-        A tuple of (inputs, byproducts), each a list of InputItems with calculated rates.
-    """
-    inputs = []
-    byproducts = []
-    for ingredient in recipe.ingredients:
-        entry: InputItem = {
-            "item_id": ingredient.item_id,
-            "item_name": ingredient.item.name,
-            "rate": _calc_rate(recipe.crafting_time, ingredient.quantity, num_buildings)
-        }
-        if ingredient.is_output:
-            if ingredient.item_id != item_id:
+        if ing.is_output:
+            if ing.item_id != item_id:
                 byproducts.append(entry)
         else:
             inputs.append(entry)
-    return inputs, byproducts
 
-def _calc_rate(crafting_time: int, quantity: int, num_buildings: int) -> float:
-    """
-    Calculates the item rate per minute for a given crafting setup.
-
-    Args:
-        crafting_time: Time in seconds to complete one crafting cycle.
-        quantity: Number of items produced or consumed per cycle.
-        num_buildings: Number of buildings running in parallel.
-
-    Returns:
-        Items per minute produced or consumed across all buildings.
-    """
-    return ((SECONDS_PER_MINUTE / crafting_time) * quantity) * num_buildings
-
-def calculate_recipe_requirements(session: Session, recipe_id: int, item_id: int, target_rate: float) -> RecipeRequirements:
-    """
-    Calculates the full input, output, and byproduct requirements for a recipe at a target rate.
-
-    Args:
-        session: An active SQLAlchemy Session used for database queries.
-        recipe_id: The database ID of the recipe to evaluate.
-        item_id: The database ID of the item being produced.
-        target_rate: The desired output rate in items per minute.
-
-    Returns:
-        A RecipeRequirements dict containing the recipe name, building name, number of
-        buildings, output item, list of inputs, and list of byproducts.
-
-    Raises:
-        ValueError: If no output matching item_id is found in the recipe.
-    """
-    recipe: Recipe = get_recipe(session, recipe_id)
-    output, num_buildings = _find_output(recipe, item_id, target_rate)
-    inputs, byproducts = _collect_inputs_and_byproducts(recipe, item_id, num_buildings)
+    output: ResolvedItem = {
+        "item_id": item_id,
+        "item_name": output_ingredient.item.name,
+        "rate": target_rate,
+    }
 
     return {
         "recipe_id": recipe.id,
         "recipe_name": recipe.name,
+        "building_id": recipe.building.id,
         "building_name": recipe.building.name,
-        "num_buildings": num_buildings,
+        "num_buildings_ideal": num_ideal,
+        "num_buildings_rounded": num_rounded,
+        "clock_speed": clock_speed,
+        "power_mw_per_building": building_power,
+        "total_power_mw": total_power,
         "output": output,
         "inputs": inputs,
-        "byproducts": byproducts
+        "byproducts": byproducts,
     }
+
+
+def _merge_sum(dst: dict[str, float], src: dict[str, float]) -> None:
+    for k, v in src.items():
+        dst[k] = dst.get(k, 0.0) + v
+
+
+def _raw_node(item_id: int, item_name: str, target_rate: float) -> ProductionNode:
+    """Terminal node for a raw material: contributes to raw_materials, no buildings/power."""
+    return {
+        "item_id": item_id,
+        "item_name": item_name,
+        "required_rate": target_rate,
+        "is_raw_material": True,
+        "raw_materials": {item_name: target_rate},
+        "byproducts_totals": {},
+        "building_summary": {},
+        "power_mw_total": 0.0,
+    }
+
+
+def calculate_chain(
+    session: Session,
+    item_id: int,
+    target_rate: float,
+    *,
+    preferred_recipes: Optional[dict[int, int]] = None,
+    _visited: Optional[frozenset[int]] = None,
+) -> ProductionNode:
+    """
+    Pure-functional production chain calculator.
+
+    Returns a ProductionNode whose raw_materials/byproducts_totals/building_summary/
+    power_mw_total fields are the sums for that node's subtree only. Intermediate
+    nodes therefore carry correct per-subtree totals, not a shared accumulator.
+
+    Args:
+        session: Active SQLAlchemy Session.
+        item_id: Item to produce.
+        target_rate: Desired output rate in items/min.
+        preferred_recipes: Optional map of {item_id: recipe_id} to force a specific
+            recipe when multiple produce the same item.
+        _visited: Internal cycle-detection set. Do not pass explicitly.
+
+    Returns:
+        A ProductionNode for the requested item.
+    """
+    visited: frozenset[int] = _visited if _visited is not None else frozenset()
+
+    if item_id in visited:
+        # Cycle - terminate as raw to prevent infinite recursion.
+        fallback = get_item(session, item_id)
+        return _raw_node(item_id, fallback.name if fallback else f"item_{item_id}", target_rate)
+
+    recipes = get_recipes_for_item(session, item_id)
+    if not recipes:
+        item = get_item(session, item_id)
+        return _raw_node(item_id, item.name, target_rate)
+
+    chosen_id = (preferred_recipes or {}).get(item_id)
+    recipe = next((r for r in recipes if r.id == chosen_id), recipes[0])
+
+    requirements = _compute_requirements(recipe, item_id, target_rate)
+
+    dependencies: dict[str, ProductionNode] = {}
+    raw_materials: dict[str, float] = {}
+    byproducts_totals: dict[str, float] = {
+        bp["item_name"]: bp["rate"] for bp in requirements["byproducts"]
+    }
+    building_summary: dict[str, float] = {
+        requirements["building_name"]: requirements["num_buildings_ideal"]
+    }
+    power_total: float = requirements["total_power_mw"]
+
+    next_visited = visited | {item_id}
+    for inp in requirements["inputs"]:
+        dep = calculate_chain(
+            session,
+            inp["item_id"],
+            inp["rate"],
+            preferred_recipes=preferred_recipes,
+            _visited=next_visited,
+        )
+        dependencies[inp["item_name"]] = dep
+        _merge_sum(raw_materials, dep["raw_materials"])
+        _merge_sum(byproducts_totals, dep["byproducts_totals"])
+        _merge_sum(building_summary, dep["building_summary"])
+        power_total += dep["power_mw_total"]
+
+    return {
+        "item_id": item_id,
+        "item_name": requirements["output"]["item_name"],
+        "required_rate": target_rate,
+        "is_raw_material": False,
+        "recipe": requirements,
+        "dependencies": dependencies,
+        "raw_materials": raw_materials,
+        "byproducts_totals": byproducts_totals,
+        "building_summary": building_summary,
+        "power_mw_total": power_total,
+    }
+
+
+class ProductionCalculator:
+    """
+    Thin backwards-compatible wrapper around `calculate_chain`.
+
+    Kept so existing callers keep working. New code should call `calculate_chain`
+    directly - it's pure-functional and easier to test.
+    """
+
+    def __init__(self, session: Session, preferred_recipes: Optional[dict[int, int]] = None):
+        self.session = session
+        self.preferred_recipes = preferred_recipes or {}
+
+    def calculate(self, item_id: int, target_rate: float) -> ProductionNode:
+        return calculate_chain(
+            self.session, item_id, target_rate, preferred_recipes=self.preferred_recipes
+        )
+
+
+def calculate_recipe_requirements(
+    session: Session, recipe_id: int, item_id: int, target_rate: float
+) -> RecipeRequirements:
+    """Compute the requirements block for a single recipe at a target rate."""
+    recipe = get_recipe(session, recipe_id)
+    if recipe is None:
+        raise ValueError(f"Recipe {recipe_id} not found")
+    return _compute_requirements(recipe, item_id, target_rate)

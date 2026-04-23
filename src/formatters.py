@@ -22,11 +22,13 @@ def format_recipe_for_table(recipe: dict[str, Any]) -> dict[str, Any]:
     """
     Format a recipe dictionary for display in a table by converting
     ingredient/product lists into readable strings.
-    
+
     Args:
-        recipe: Recipe dict containing 'inputs' and 'outputs' as lists
-        
+        recipe: Recipe dict containing 'inputs' and 'outputs' as lists.
+
     Returns:
+        A shallow copy of the recipe with 'inputs' and 'outputs' replaced by
+        their formatted, comma-separated string representations.
     """
 
     formatted_dict = recipe.copy()
