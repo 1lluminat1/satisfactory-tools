@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from dotenv import load_dotenv
 
-from src.cache import cached_all_items
+from src.cache import cached_all_items, ensure_db_ready
 from src.database import get_engine, get_session
 from src.queries import get_all_groups, get_recipes_for_item
 from src.calculator import calculate_chain
@@ -13,6 +13,10 @@ from src.production import get_max_output
 
 load_dotenv()
 engine = get_engine(os.getenv('DATABASE_URL'))
+
+st.set_page_config(page_title="Production Calculator", page_icon="🧮", layout="wide")
+ensure_db_ready(engine)
+
 session = get_session(engine)
 
 

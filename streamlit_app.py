@@ -4,7 +4,7 @@ import os
 import streamlit as st
 from dotenv import load_dotenv
 
-from src.cache import cached_all_items
+from src.cache import cached_all_items, ensure_db_ready
 from src.database import get_engine, get_session, Purity
 from src.game_constants import MINER_TIERS, default_extraction_rate, minimum_belt_tier
 from src.queries import (
@@ -34,6 +34,10 @@ from src.production import (
 
 load_dotenv()
 engine = get_engine(os.getenv('DATABASE_URL'))
+
+st.set_page_config(page_title="Satisfactory Dashboard", page_icon="🏭", layout="wide")
+ensure_db_ready(engine)
+
 session = get_session(engine)
 
 
@@ -44,8 +48,6 @@ def _balance_emoji(balance: float) -> str:
 
 
 try:
-    st.set_page_config(page_title="Satisfactory Dashboard", layout="wide")
-
     groups = get_all_groups(session)
     all_items = cached_all_items(session)
     items_by_name = {item['name']: item['id'] for item in all_items}

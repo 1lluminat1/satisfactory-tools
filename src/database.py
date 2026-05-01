@@ -2,9 +2,11 @@ import enum
 
 from sqlalchemy import Boolean, Column, Float, ForeignKey, Integer, String, create_engine
 from sqlalchemy import Enum as SQLEnum
-from sqlalchemy.orm import declarative_base, relationship, sessionmaker
+from sqlalchemy.orm import DeclarativeBase, relationship, sessionmaker
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    """Project-wide SQLAlchemy declarative base."""
 
 class ItemForm(enum.Enum):
     SOLID = "SOLID"
@@ -128,3 +130,9 @@ def create_tables(engine):
 def get_session(engine):
     Session = sessionmaker(bind=engine)
     return Session()
+
+def is_etl_complete(engine) -> bool:
+    """True if the ETL has populated the schema (items, buildings, recipes tables exist)."""
+    from sqlalchemy import inspect
+    tables = set(inspect(engine).get_table_names())
+    return {"items", "buildings", "recipes"}.issubset(tables)

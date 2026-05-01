@@ -3,7 +3,7 @@ import os
 import streamlit as st
 from dotenv import load_dotenv
 
-from src.cache import cached_all_buildings, cached_all_recipes
+from src.cache import cached_all_buildings, cached_all_recipes, ensure_db_ready
 from src.database import get_engine, get_session
 from src.formatters import format_recipe_for_table
 from src.queries import get_recipe, get_recipe_details
@@ -11,6 +11,10 @@ from src.queries import get_recipe, get_recipe_details
 
 load_dotenv()
 engine = get_engine(os.getenv('DATABASE_URL'))
+
+st.set_page_config(page_title="Recipe Browser", page_icon="📖", layout="wide")
+ensure_db_ready(engine)
+
 session = get_session(engine)
 
 try:

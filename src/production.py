@@ -1,4 +1,5 @@
 import math
+from typing import Any, TypeVar
 
 from sqlalchemy.orm import Session
 
@@ -12,6 +13,15 @@ from .queries import (
     get_resource_nodes_for_group,
 )
 from .schemas import ProductionNode
+
+_T = TypeVar("_T")
+
+
+def _require(value: _T | None, kind: str, identifier: Any) -> _T:
+    """Narrow Optional -> required, raising if the lookup returned None."""
+    if value is None:
+        raise ValueError(f"{kind} {identifier!r} not found")
+    return value
 
 
 def get_group_resource_totals(session: Session, group_id: int) -> dict[str, float]:
@@ -70,7 +80,7 @@ def get_max_output(
         return {"max_rate": float('inf'), "bottleneck": None, "missing": []}
 
     ratios = {r: group_totals[r] / raw[r] for r in raw}
-    bottleneck = min(ratios, key=ratios.get)
+    bottleneck = min(ratios, key=lambda k: ratios[k])
     return {"max_rate": ratios[bottleneck], "bottleneck": bottleneck, "missing": []}
 
 def get_resource_balance(session: Session, production_line_id: int) -> dict:
@@ -82,7 +92,9 @@ def get_resource_balance(session: Session, production_line_id: int) -> dict:
     building_count, and bottleneck (the most-deficient material, or None).
     """
     balance: dict = {}
-    production_line = get_production_line(session, production_line_id)
+    production_line = _require(
+        get_production_line(session, production_line_id), "ProductionLine", production_line_id
+    )
     group_totals = get_group_resource_totals(session, production_line.group_id)
 
     chain = calculate_chain(
@@ -129,7 +141,7 @@ def get_group_summary(session: Session, group_id: int) -> dict:
             - overall_balance (dict[str, float]): Group resource totals minus combined
                 consumption of all production lines. Positive = surplus, negative = deficit.
     """
-    group = get_group(session, group_id)
+    group = _require(get_group(session, group_id), "Group", group_id)
     group_totals = get_group_resource_totals(session, group.id)
     lines = []
     overall_balance = group_totals.copy()
@@ -386,7 +398,9 @@ def update_production_line_rate(
     Returns:
         The updated ProductionLine.
     """
-    line = get_production_line(session, production_line_id)
+    line = _require(
+        get_production_line(session, production_line_id), "ProductionLine", production_line_id
+    )
     for factory in list(line.factories):
         session.delete(factory)
     session.flush()
@@ -412,7 +426,9 @@ def set_production_line_active(
     Returns:
         The updated ProductionLine.
     """
-    line = get_production_line(session, production_line_id)
+    line = _require(
+        get_production_line(session, production_line_id), "ProductionLine", production_line_id
+    )
     line.is_active = is_active
     session.commit()
     return line
@@ -426,7 +442,7 @@ def rename_group(
     description: str | None = None,
 ) -> Group:
     """Rename a group and optionally update its description."""
-    group = get_group(session, group_id)
+    group = _require(get_group(session, group_id), "Group", group_id)
     group.name = name
     if description is not None:
         group.description = description
@@ -435,7 +451,9 @@ def rename_group(
 
 def rename_production_line(session: Session, production_line_id: int, name: str) -> ProductionLine:
     """Rename a production line."""
-    line = get_production_line(session, production_line_id)
+    line = _require(
+        get_production_line(session, production_line_id), "ProductionLine", production_line_id
+    )
     line.name = name
     session.commit()
     return line
@@ -541,7 +559,7 @@ def import_factory_state(session: Session, data: dict) -> dict:
     Import groups/lines/nodes from an export dict. Appends to existing state
     (does not wipe). Returns a summary of what was imported or skipped.
     """
-    summary = {"groups": 0, "lines": 0, "nodes": 0, "skipped_items": []}
+    summary: dict[str, Any] = {"groups": 0, "lines": 0, "nodes": 0, "skipped_items": []}
     for group_data in data.get("groups", []):
         group = create_group(
             session, group_data["name"], group_data.get("description", "")

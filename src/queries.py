@@ -14,6 +14,7 @@ from .database import (
 from .schemas import (
     FactoryDetails,
     GroupSummary,
+    IngredientEntry,
     ItemDetails,
     ProductionLineDetails,
     RecipeDetails,
@@ -134,11 +135,14 @@ def get_recipe_details(recipe: Recipe) -> RecipeDetails:
         A RecipeDetails dict containing the recipe's id, name, building, crafting_time,
         and categorized lists of inputs and outputs.
     """
-    inputs = []
-    outputs = []
+    inputs: list[IngredientEntry] = []
+    outputs: list[IngredientEntry] = []
 
     for ingredient in recipe.ingredients:
-        entry = {"name": ingredient.item.name, "quantity": ingredient.quantity}
+        entry: IngredientEntry = {
+            "name": ingredient.item.name,
+            "quantity": ingredient.quantity,
+        }
         if ingredient.is_output:
             outputs.append(entry)
         else:

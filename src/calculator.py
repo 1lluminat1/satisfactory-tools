@@ -136,7 +136,8 @@ def calculate_chain(
     recipes = get_recipes_for_item(session, item_id)
     if not recipes:
         item = get_item(session, item_id)
-        return _raw_node(item_id, item.name, target_rate)
+        item_name = item.name if item else f"item_{item_id}"
+        return _raw_node(item_id, item_name, target_rate)
 
     chosen_id = (preferred_recipes or {}).get(item_id)
     recipe = next((r for r in recipes if r.id == chosen_id), recipes[0])

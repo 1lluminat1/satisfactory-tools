@@ -3,13 +3,17 @@ import os
 import streamlit as st
 from dotenv import load_dotenv
 
-from src.cache import cached_all_items
+from src.cache import cached_all_items, ensure_db_ready
 from src.database import get_engine, get_session
 from src.queries import get_item_recipe_usage
 
 
 load_dotenv()
 engine = get_engine(os.getenv('DATABASE_URL'))
+
+st.set_page_config(page_title="Item Explorer", page_icon="📦", layout="wide")
+ensure_db_ready(engine)
+
 session = get_session(engine)
 
 try:
