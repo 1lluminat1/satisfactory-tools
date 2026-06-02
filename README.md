@@ -4,6 +4,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
+**▶ [Live demo](https://satisfactory-tools.streamlit.app)** — deployed on Streamlit Community Cloud.
+
 Factory-planning tools for the game **Satisfactory**. A Streamlit app over a SQLite/SQLAlchemy
 database that calculates production chains, tracks resource nodes and factories across groups
 of bases, and shows real-time balance / power / building totals.
@@ -86,11 +88,13 @@ step on first run.
 ## Tests
 
 ```bash
-pytest          # full suite, ~0.5s, no DB or Docs.json required
+pip install -r requirements-dev.txt   # pytest, ruff, mypy (app runtime is requirements.txt)
+pytest                  # full suite, ~0.5s, no DB or Docs.json required
 ruff check src tests
+mypy src tests
 ```
 
-CI runs both on every push and PR (see `.github/workflows/ci.yml`).
+CI runs all three on every push and PR (see `.github/workflows/ci.yml`).
 
 ## Project layout
 
