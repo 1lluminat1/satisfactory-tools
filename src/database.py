@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 import enum
 
-from sqlalchemy import Boolean, Column, Float, ForeignKey, Integer, String, create_engine
 from sqlalchemy import Enum as SQLEnum
-from sqlalchemy.orm import DeclarativeBase, relationship, sessionmaker
+from sqlalchemy import ForeignKey, String, create_engine
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship, sessionmaker
 
 
 class Base(DeclarativeBase):
@@ -20,106 +22,108 @@ class Purity(enum.Enum):
 
 class Item(Base):
     __tablename__ = 'items'
-    
-    id = Column(Integer, primary_key=True)
-    class_name = Column(String(200), unique=True, nullable=False)
-    name = Column(String(200), nullable=False)
-    description = Column(String, default="")
-    form = Column(SQLEnum(ItemForm), default=ItemForm.SOLID)
-    stack_size_code = Column(String(50), nullable=True)
-    stack_size = Column(Integer, nullable=True)
-    energy_value = Column(Float, default=0)
-    radioactive_decay = Column(Float, default=0)
-    sink_points = Column(Integer, nullable=True)
-    fluid_color = Column(String(50), nullable=True)
-    
-    ingredients = relationship("RecipeIngredient", back_populates="item")
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    class_name: Mapped[str] = mapped_column(String(200), unique=True)
+    name: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str] = mapped_column(String, default="")
+    form: Mapped[ItemForm | None] = mapped_column(SQLEnum(ItemForm), default=ItemForm.SOLID)
+    stack_size_code: Mapped[str | None] = mapped_column(String(50))
+    stack_size: Mapped[int | None] = mapped_column()
+    energy_value: Mapped[float] = mapped_column(default=0.0)
+    radioactive_decay: Mapped[float] = mapped_column(default=0.0)
+    sink_points: Mapped[int | None] = mapped_column()
+    fluid_color: Mapped[str | None] = mapped_column(String(50))
+
+    ingredients: Mapped[list[RecipeIngredient]] = relationship(back_populates="item")
 
 class Building(Base):
     __tablename__ = 'buildings'
 
-    id = Column(Integer, primary_key=True)
-    class_name = Column(String(200), unique=True, nullable=False)
-    name = Column(String(200), nullable=False)
-    description = Column(String, default="")
-    power_mw = Column(Float, default=0.0, nullable=False)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    class_name: Mapped[str] = mapped_column(String(200), unique=True)
+    name: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str] = mapped_column(String, default="")
+    power_mw: Mapped[float] = mapped_column(default=0.0)
 
-    recipes = relationship("Recipe", back_populates="building")
+    recipes: Mapped[list[Recipe]] = relationship(back_populates="building")
 
 class Recipe(Base):
     __tablename__ = 'recipes'
-    
-    id = Column(Integer, primary_key=True)
-    class_name = Column(String(200), unique=True, nullable=False)
-    name = Column(String(200), nullable=False)
-    crafting_time = Column(Float, nullable=False)
-    building_id = Column(Integer, ForeignKey('buildings.id'))
-    
-    building = relationship("Building", back_populates="recipes")
-    ingredients = relationship("RecipeIngredient", back_populates="recipe", cascade="all, delete-orphan")
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    class_name: Mapped[str] = mapped_column(String(200), unique=True)
+    name: Mapped[str] = mapped_column(String(200))
+    crafting_time: Mapped[float] = mapped_column()
+    building_id: Mapped[int] = mapped_column(ForeignKey('buildings.id'))
+
+    building: Mapped[Building] = relationship(back_populates="recipes")
+    ingredients: Mapped[list[RecipeIngredient]] = relationship(
+        back_populates="recipe", cascade="all, delete-orphan"
+    )
 
 class RecipeIngredient(Base):
     __tablename__ = 'recipe_ingredients'
-    
-    id = Column(Integer, primary_key=True)
-    quantity = Column(Integer, nullable=False)
-    is_output = Column(Boolean, default=False)
-    recipe_id = Column(Integer, ForeignKey('recipes.id', ondelete='CASCADE'))
-    item_id = Column(Integer, ForeignKey('items.id'))
-    
-    recipe = relationship("Recipe", back_populates="ingredients")
-    item = relationship("Item", back_populates="ingredients")
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    quantity: Mapped[int] = mapped_column()
+    is_output: Mapped[bool] = mapped_column(default=False)
+    recipe_id: Mapped[int] = mapped_column(ForeignKey('recipes.id', ondelete='CASCADE'))
+    item_id: Mapped[int] = mapped_column(ForeignKey('items.id'))
+
+    recipe: Mapped[Recipe] = relationship(back_populates="ingredients")
+    item: Mapped[Item] = relationship(back_populates="ingredients")
 
 class Group(Base):
     __tablename__ = 'groups'
 
-    id = Column(Integer, primary_key=True)
-    name = Column(String(200), nullable=False)
-    description = Column(String, default="")
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str] = mapped_column(String, default="")
 
-    production_lines = relationship("ProductionLine", back_populates="group")
-    resource_nodes = relationship("ResourceNode", back_populates="group")
+    production_lines: Mapped[list[ProductionLine]] = relationship(back_populates="group")
+    resource_nodes: Mapped[list[ResourceNode]] = relationship(back_populates="group")
 
 class ProductionLine(Base):
     __tablename__ = 'production_lines'
 
-    id = Column(Integer, primary_key=True)
-    name = Column(String(200), nullable=False)
-    target_item_id = Column(Integer, ForeignKey('items.id'))
-    target_rate = Column(Float, nullable=False)
-    group_id = Column(Integer, ForeignKey('groups.id'), nullable=True)
-    is_active = Column(Boolean, default=True)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    target_item_id: Mapped[int] = mapped_column(ForeignKey('items.id'))
+    target_rate: Mapped[float] = mapped_column()
+    group_id: Mapped[int] = mapped_column(ForeignKey('groups.id'))
+    is_active: Mapped[bool] = mapped_column(default=True)
 
-    group = relationship("Group", back_populates="production_lines")
-    factories = relationship("Factory", back_populates="production_line")
-    target_item = relationship("Item")
+    group: Mapped[Group] = relationship(back_populates="production_lines")
+    factories: Mapped[list[Factory]] = relationship(back_populates="production_line")
+    target_item: Mapped[Item] = relationship()
 
 class Factory(Base):
     __tablename__ = 'factories'
 
-    id = Column(Integer, primary_key=True)
-    name = Column(String(200), nullable=False)
-    production_line_id = Column(Integer, ForeignKey('production_lines.id'))
-    recipe_id = Column(Integer, ForeignKey('recipes.id'))
-    building_count = Column(Integer, nullable=False)
-    clock_speed = Column(Float, default=100.0)
-    order = Column(Integer, default=0)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    production_line_id: Mapped[int] = mapped_column(ForeignKey('production_lines.id'))
+    recipe_id: Mapped[int] = mapped_column(ForeignKey('recipes.id'))
+    building_count: Mapped[int] = mapped_column()
+    clock_speed: Mapped[float] = mapped_column(default=100.0)
+    order: Mapped[int] = mapped_column(default=0)
 
-    production_line = relationship("ProductionLine", back_populates="factories")
-    recipe = relationship("Recipe")
+    production_line: Mapped[ProductionLine] = relationship(back_populates="factories")
+    recipe: Mapped[Recipe] = relationship()
 
 class ResourceNode(Base):
     __tablename__ = 'resource_nodes'
-    
-    id = Column(Integer, primary_key=True)
-    name = Column(String(200), nullable=False)
-    item_id = Column(Integer, ForeignKey('items.id'))
-    purity = Column(SQLEnum(Purity), default=Purity.NORMAL)
-    extraction_rate = Column(Float)
-    group_id = Column(Integer, ForeignKey('groups.id'))
 
-    group = relationship("Group", back_populates="resource_nodes")
-    item = relationship("Item")
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200))
+    item_id: Mapped[int] = mapped_column(ForeignKey('items.id'))
+    purity: Mapped[Purity | None] = mapped_column(SQLEnum(Purity), default=Purity.NORMAL)
+    extraction_rate: Mapped[float] = mapped_column()
+    group_id: Mapped[int] = mapped_column(ForeignKey('groups.id'))
+
+    group: Mapped[Group] = relationship(back_populates="resource_nodes")
+    item: Mapped[Item] = relationship()
 
 def get_engine(database_url):
     return create_engine(database_url)
