@@ -184,12 +184,12 @@ def get_recipes_for_item(session: Session, item_id: int) -> list[Recipe]:
         A list of Recipe ORM instances that output the specified item.
         Returns an empty list if the item has no producing recipes (i.e. it is a raw material).
     """
-    return session.execute(select(Recipe)
+    return list(session.execute(select(Recipe)
                            .join(Recipe.ingredients)
                            .where(
                                RecipeIngredient.item_id == item_id,
                                RecipeIngredient.is_output.is_(True)
-                           )).scalars().all()
+                           )).scalars().all())
 
 
 # --- Building Queries ---
